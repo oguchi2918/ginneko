@@ -1,0 +1,36 @@
+require 'rake/clean'
+
+CXX = 'g++'
+CC = 'gcc'
+CXXFLAGS = "-std=c++14 -Wall -O2 -I/usr/local/include -DIMGUI_IMPL_OPENGL_LOADER_GLAD " + `sdl2-config --cflags`.chomp
+CFLAGS = "-Wall -Werror -O2 -I/usr/local/include -DIMGUI_IMPL_OPENGL_LOADER_GLAD " + `sdl2-config --cflags`.chomp
+LDFLAGS = `sdl2-config --libs`.chomp + " -lGL"# -lassimp"
+
+TARGET = 'blob'
+#TARGET = 'cameratest'
+#TARGET = 'gomu'
+#TARGET = 'gomu2'
+#TARGET = 'multilighting'
+#TARGET = 'pointanim'
+
+VBO_SRCS = FileList["shape.cpp"]
+NEKOLIB_SRCS = FileList["memory.cpp", "clock.cpp", "input.cpp", "renderer.cpp", "program.cpp", "utils.cpp", "texture.cpp", "camera.cpp"]#, "rendertarget.cpp"]
+
+IMGUI_SRCS = FileList["imgui/imgui.cpp", "imgui/imgui_draw.cpp", "imgui/imgui_widgets.cpp", "imgui/imgui_impl_opengl3.cpp", "imgui/imgui_impl_sdl.cpp"]
+SRCS = FileList["main_#{TARGET}.cpp", "scene_#{TARGET}.cpp", "glad.c"] + VBO_SRCS + NEKOLIB_SRCS + IMGUI_SRCS
+OBJS = SRCS.ext('o')
+
+CLEAN.include(OBJS)
+
+task :default => TARGET
+
+file TARGET => (OBJS) do |t|
+  sh "#{CXX} -o #{t.name} #{t.prerequisites.join(' ')} #{LDFLAGS}"
+end
+
+rule '.o' => '.cpp' do |t|
+  sh "#{CXX} #{CXXFLAGS} -o #{t.name} -c #{t.source}"
+end
+rule '.o' => '.c' do |t|
+  sh "#{CC} #{CFLAGS} -o #{t.name} -c #{t.source}"
+end
