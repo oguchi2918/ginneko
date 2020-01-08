@@ -9,6 +9,16 @@
 #include "utils.hpp"
 #include "defines.hpp"
 
+namespace {
+  unsigned calc_mipmap_levels(int width, int height) {
+    int levels = 1;
+    while ((width | height) >> levels) {
+      levels++;
+    }
+    return levels;
+  }
+}
+
 namespace nekolib {
   namespace renderer {
 
@@ -16,6 +26,7 @@ namespace nekolib {
     class Texture::Impl : public nekolib::base::Refered {
     public:
       GLenum type_;
+      GLenum iformat_;
       int w_, h_;
       gl::Texture texture_;
     public:
@@ -27,7 +38,9 @@ namespace nekolib {
 	GLenum table[][3] =
 	  {
 	   { 0, 0, 0 },
-	   { GL_R8, GL_RED, GL_UNSIGNED_BYTE} ,
+	   { GL_R8, GL_RED, GL_UNSIGNED_BYTE },
+	   { GL_R16UI, GL_RED_INTEGER, GL_UNSIGNED_INT }, 
+	   { GL_R32UI, GL_RED_INTEGER, GL_UNSIGNED_INT }, 
 	   { GL_R32F, GL_RED, GL_FLOAT },
 	   { GL_RGB8, GL_RGB, GL_UNSIGNED_BYTE },
 	   { GL_RGB16F, GL_RGB, GL_FLOAT },
@@ -54,6 +67,7 @@ namespace nekolib {
 	  // テクスチャ生成に成功してから情報を保持させる
 	  if (!check_gl_error(__FILE__, __LINE__)) {
 	    type_ = GL_TEXTURE_2D;
+	    iformat_ = table[index][0];
 	    w_ = w; h_ = h;
 	  }
 	}
@@ -61,7 +75,7 @@ namespace nekolib {
       }
       
       // 一枚絵2Dテクスチャをファイルから読みこみ
-      Impl(const char* filename, bool flipped)
+      Impl(const char* filename, bool immutable, bool flipped)
 	: type_(0), w_(0), h_(0), texture_() {
 	if (flipped) {
 	  stbi_set_flip_vertically_on_load(true);
@@ -97,9 +111,16 @@ namespace nekolib {
 	  break;
 	}
 	texture_.bind(0, GL_TEXTURE_2D);
-	glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
-	glGenerateMipmap(GL_TEXTURE_2D);
-	
+
+	if (immutable) {
+	  glTexStorage2D(GL_TEXTURE_2D, calc_mipmap_levels(width, height), iformat, width, height);
+	  glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, format, GL_UNSIGNED_BYTE, data);
+	  glGenerateMipmap(GL_TEXTURE_2D);
+	  
+	} else {
+	  glTexImage2D(GL_TEXTURE_2D, 0, iformat, width, height, 0, format, GL_UNSIGNED_BYTE, data);
+	  glGenerateMipmap(GL_TEXTURE_2D);
+	}
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
 	glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
@@ -109,6 +130,7 @@ namespace nekolib {
 	
 	if (!check_gl_error(__FILE__, __LINE__)) {
 	  type_ = GL_TEXTURE_2D;
+	  iformat_ = iformat;
 	  w_ = width; h_ = height;
 	}
       }
@@ -125,7 +147,7 @@ namespace nekolib {
 	};
 
 	int width, height, components;
-	GLenum format(0);
+	GLenum iformat, format;
 	for (int i = 0; i < 6; ++i) {
 	  unsigned char* data = stbi_load(cubemap_filenames[i], &width, &height, &components, 0);
 	  if (!data || width != height) {
@@ -133,19 +155,23 @@ namespace nekolib {
 	  }
 	  switch (components) {
 	  case 1:
+	    iformat = GL_R8;
 	    format = GL_RED;
 	    break;
 	  case 3:
+	    iformat = GL_RGB8;
 	    format = GL_RGB;
 	    break;
 	  case 4:
+	    iformat = GL_RGBA8;
 	    format = GL_RGBA;
 	    break;
 	  default:
 	    assert(!"Texture class doesn't support this format, sorry.\n");
+	    return;
 	    break;
 	  }
-	  glTexImage2D(targets[i], 0, format, width, height, 0,
+	  glTexImage2D(targets[i], 0, iformat, width, height, 0,
 		       format, GL_UNSIGNED_BYTE, data);
 	  stbi_image_free(data);
 	}
@@ -157,6 +183,7 @@ namespace nekolib {
 
 	if (!check_gl_error(__FILE__, __LINE__)) {
 	  type_ = GL_TEXTURE_CUBE_MAP;
+	  iformat_ = iformat;
 	  w_ = width; h_ = height;
 	}
       }
@@ -182,10 +209,10 @@ namespace nekolib {
       return r;
     }
 
-    Texture Texture::create(const char* filename, bool flipped)
+    Texture Texture::create(const char* filename, bool immutable, bool flipped)
     {
       Texture r;
-      r.impl_ = new Texture::Impl(filename, flipped);
+      r.impl_ = new Texture::Impl(filename, immutable, flipped);
       if (!r.impl_->valid()) {
 	SAFE_DELETE(r.impl_);
       }
@@ -214,6 +241,12 @@ namespace nekolib {
       return impl_->type_;
     }
 
+    GLenum Texture::iformat() const noexcept
+    {
+      assert(impl_);
+      return impl_->iformat_;
+    }
+    
     int Texture::width() const noexcept
     {
       assert(impl_);

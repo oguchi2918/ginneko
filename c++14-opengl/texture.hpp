@@ -6,8 +6,10 @@
 namespace nekolib {
   namespace renderer {
     enum class TextureFormat { INVALID = 0,
-			       RED8,     // monotone, 0-255
-			       RED32F,   // monotone, float
+			       RED8,     // 0-255
+			       RED16,    // 16bit uint
+			       RED32,    // 32bit uint
+			       RED32F,   // 32bit float
 			       RGB8,     // R,G,B each 0-255
 			       RGB16F,   // R,G,B each 16bit float
 			       RGB32F,   // R,G,B each 32bit float
@@ -27,13 +29,18 @@ namespace nekolib {
       // 空2Dテクスチャ (RenderTarget(=FBO)等で使用)
       static Texture create(int width, int height, TextureFormat tf);
       // 一枚絵からロードされる2Dテクスチャ
-      static Texture create(const char* filename, bool flipped = true);
+      // mipmapは自動生成される
+      // immutable=trueは要OpenGL 4.2以上
+      // メモリ領域の再確保が行われず少し速い(かもしれない)程度で
+      // メモリ内容は普通に変更できる
+      static Texture create(const char* filename, bool immutable = false, bool flipped = true);
       // キューブマップを6枚絵からロード
       // filenamesは left, right, top, bottom, back, frontの順番と解釈する
       static Texture create_cubemap(const char** filenames);
 
       void bind(unsigned) const;
       GLenum type() const noexcept;
+      GLenum iformat() const noexcept;
       int width() const noexcept;
       int height() const noexcept;
       GLuint handle() const noexcept;

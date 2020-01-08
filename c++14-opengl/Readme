@@ -2,7 +2,7 @@ C++で書いたOpenGL(4.3 core profile)を使用したプログラムです。
 色々と外部ライブラリを使用しているので即ビルドするのは難しいと思われます。
 一応後の方にLinux/BSDでのビルド環境構築に必要な手順の概略を書いておきますのでご容赦ください。
 
-■ディレクトリ内ファイル構成
+■ここにあるファイル
 自作ライブラリソースファイル
 memory.cpp
 clock.cpp
@@ -49,26 +49,23 @@ imgui/*.h
 
 ■ビルドされるプログラム
 blob … 破裂する点群のアニメーション
-cameratest … cameraクラスの操作テスト
+cameratest … cameraクラスの操作性テスト
 gomu … ゴム紐シミュレーション(Transform Feedback版)
 gomu2 … ゴム紐シミュレーション(Compute Shader版)
 multilighting … 各種光源のサンプル実装(Imguiで色調整版)
 pointanim … 粒子の渦アニメーション
-
-■ビルド方法
-RakefileのTARGET=の行で↑のプログラム名を指定した後、コマンドラインからrakeと入力してください。
+imageprocess … 各種フィルタによる画像処理(Compute Shader版)
 
 ■環境構築手順とか
 まず、ハードウェアとしてOpenGL4.3以降に対応したグラボが必要です。
 OSはLinux/BSDの64bit環境を想定しています。
-#64bit専用はmemoryimpl.hppだけなのですが、手元に32bit環境が無くてテスト不可なので…
+#64bit専用なのはmemoryimpl.hppだけなのですが、手元に32bit環境が無くてテスト不可なので…
 C/C++コンパイラはgcc or clang環境を想定。
 あとビルド環境としてRakefileを使用しているのでrubyも必要です。
 
 ちなみに自宅では、
-CPU: Intel Core i3-8100 3.60G
-GPU: GeForce GT 640
-OS: FreeBSD 12.0-Release (amd64)
+CPU: GPU: GeForce GT 640
+OS: FreeBSD(amd64)
 gcc8.3.0と clang 6.0.1, ruby 2.6.1付属のrakeといった環境でビルドを確認しています.
 
 外部ライブラリとして
@@ -88,14 +85,9 @@ SDL2はSDL2/*.h
 が置かれていると想定。SDL2はlibSDL2.so等が適切な場所にある事も必要です。
 apt-getやportsでインストールするなりソースコードからビルドするなりして下さい。
 #ビルドが必要なのはSDL2のみで他はファイルを適切な場所に配置すればOK.
-一応自宅環境で使っているバージョンの配布物(ソース)を../externalに置いておきますが、
+一応自宅環境で使っている配布物(ソース)を../externalに置いておきますが、
 詳細は上記した各外部ライブラリの配布HPを参照して下さい。
 gladは配布HP(Web Service)にて
-language: C/C++ API: gl version 4.3, Profile: core, Extensions: nothingを選択して
+language: C++ API: gl version 4.3, Profile: core, Extensions: nothingを選択して
 'generate a loader'にチェックした状態で作成された代物です。
 
-他に
-Dear ImGui(GUIライブラリ) … https://github.com/ocornut/imgui
-も使用していますが、元々「ソースで配布するから好きなフレームワークに組み込んでね！」
-という開発方針らしいので別途ビルドやインストールをする必要はありません。
-このディレクトリ内のimgui/以下にあるファイルだけあればRakefileの方で勝手にビルドします。

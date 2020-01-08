@@ -11,7 +11,6 @@
 #include "input.hpp"
 #include "renderer.hpp"
 #include "utils.hpp"
-#include "globject.hpp"
 
 using glm::vec2;
 using glm::vec3;
@@ -22,7 +21,7 @@ using glm::mat4;
 using namespace nekolib::renderer;
 
 struct Point {
-  vec4 position;
+  vec4 position; // 節点位置(xyz) + 固定flag(w)
   vec4 velocity;
 };
 
@@ -42,7 +41,7 @@ public:
 
   void render(GLenum) const;
   int pick(float x, float y, float dx, float dy) const;
-  void move(int i, float x, float y, float w) const;
+  void move(int i, float x, float y, bool fixed) const;
   void end_calculate();
   void calculate(nekolib::renderer::Program&, nekolib::renderer::Program&);
   unsigned point_num() const noexcept { return point_num_; }
@@ -69,7 +68,7 @@ PointBuffer::PointBuffer(unsigned n) : fix_flags_(n, false), current_(0), point_
 
   for (size_t i = 0; i < 2; ++i) {
     buffer_[i].bind();
-    glBufferData(GL_ARRAY_BUFFER, (n + 2) * sizeof(Point), nullptr, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, n * sizeof(Point), nullptr, GL_STATIC_DRAW);
 
     vao_[i].bind();
     glEnableVertexAttribArray(0);
@@ -115,13 +114,13 @@ int PointBuffer::pick(float x, float y, float dx, float dy) const
 }
 
 // i番目の節点を座標(x, y)に移動
-// w = 1.f の時力の影響を受ける : w = 0.fの時受けない
-void PointBuffer::move(int i, float x, float y, float w) const
+// fixed = false の時力の影響を受ける : trueの時受けない
+void PointBuffer::move(int i, float x, float y, bool fixed) const
 {
   assert(i >= 0 && i < static_cast<int>(point_num_));
   
   buffer_[current_].bind();
-  vec4 tmp(x, y, 0.f, w);
+  vec4 tmp(x, y, 0.f, fixed ? 0.f : 1.f);
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i, sizeof(tmp), &tmp.x);
 }
 
@@ -191,6 +190,49 @@ void PointBuffer::reset()
 SceneGomu2::SceneGomu2() : point_num_(100), imgui_(false) {}
 SceneGomu2::~SceneGomu2(){}
 
+struct PixelInfo {
+  unsigned point_id_;
+
+  PixelInfo() : point_id_(0) {}
+};
+
+PixelInfo SceneGomu2::read_pixel(unsigned x, unsigned y)
+{
+  fbo_.bind();
+  glReadBuffer(GL_COLOR_ATTACHMENT1);
+  PixelInfo pixel;
+  glReadPixels(x, y, 1, 1, GL_RED_INTEGER, GL_UNSIGNED_INT, &pixel);
+  glReadBuffer(GL_NONE);
+  fbo_.bind(false);
+
+  check_gl_error(__FILE__, __LINE__);
+
+  return pixel;
+}
+
+bool SceneGomu2::setup_fbo()
+{
+  fbo_.bind();
+
+  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, render_tex_.handle(), 0);
+
+  pick_.bind();
+  glRenderbufferStorage(GL_RENDERBUFFER, GL_R32UI, ScreenManager::width(), ScreenManager::height());
+  glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_RENDERBUFFER, pick_.handle());
+  //  glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, pick_tex_.handle(), 0);
+
+  if (check_fbo_status(__FILE__, __LINE__)) {
+    return false;
+  }
+
+  GLenum draw_buffers[] = { GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1 };
+  glDrawBuffers(2, draw_buffers);
+
+  fbo_.bind(false);
+
+  return true;
+}
+
 bool SceneGomu2::init()
 {
   if (!compile_and_link_shaders()) {
@@ -199,16 +241,27 @@ bool SceneGomu2::init()
 
   cur_ = nekolib::clock::Clock::create(0.f);
   prev_ = cur_.snapshot();
-  
+
+  quad_ = Quad::create(0.f, 0.f, 1.f, 1.f);
+  render_tex_ = Texture::create(ScreenManager::width(), ScreenManager::height(), TextureFormat::RGB8);
+  render_tex_.bind(1);
+
+  if (!setup_fbo()) {
+    return false;
+  }
+
   // 節点+折れ線
   point_buffer_ = std::make_unique<PointBuffer>(point_num_);
 
+  point_prog_.use();
+  point_prog_.set_uniform("color_move", vec4(1.f, 0.f, 0.f, 1.f));
+  point_prog_.set_uniform("color_fix", vec4(0.f, 0.f, 1.f, 1.f));
+  
   comp_end_prog_.use();
   comp_end_prog_.set_uniform("point_num", point_num_);
   comp_prog_.use();
   comp_prog_.set_uniform("point_num", point_num_);
 
-  glClearColor(1.f, 1.f, 1.f, 1.f);
   glPointSize(point_size_);
   
   fprintf(stdout, "\nYou can drag a point with left mouse button.\n");
@@ -251,31 +304,33 @@ void SceneGomu2::update()
   float cy_inv = 1.f / cy;
   float fx = static_cast<float>(m.x() - cx) * cx_inv;
   float fy = static_cast<float>(cy - m.y()) * cy_inv;
-  float fdx = static_cast<float>(point_size_) * cx_inv * 0.5;
-  float fdy = static_cast<float>(point_size_) * cy_inv * 0.5;
 
   if (m.triggered(Mouse::Button::LEFT)) {
-    hit = point_buffer_->pick(fx, fy, fdx, fdy);
+    //    hit = point_buffer_->pick(fx, fy, fdx, fdy);
+    PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
+    //    fprintf(stderr, "%x\n", pixel.point_id_);
+    hit = static_cast<int>(pixel.point_id_);
   } else if (m.pushed(Mouse::Button::LEFT)) { // 左ドラッグ中
     if (hit >= 0) {
-      point_buffer_->move(hit, fx, fy, 0.f);
+      point_buffer_->move(hit, fx, fy, true);
     }
   } else {
     if (hit >= 0) { // 左ドラッグ終了
       if (point_buffer_->is_fix(hit)) {
 	// 端点は力の計算の影響を受けない(画鋲で止めてあるという設定)
-	point_buffer_->move(hit, fx, fy, 0.f);
+	point_buffer_->move(hit, fx, fy, true);
       } else {
-	point_buffer_->move(hit, fx, fy, 1.f);
+	point_buffer_->move(hit, fx, fy, false);
       }
       hit = -1;
     }
   }
   
   if (m.triggered(Mouse::Button::RIGHT)) {
-    int hit_r = point_buffer_->pick(fx, fy, fdx, fdy);
-    if (hit_r >= 0) {
-      point_buffer_->trigger_fix(hit_r);
+    PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
+    //    int hit_r = point_buffer_->pick(fx, fy, fdx, fdy);
+    if (pixel.point_id_ != clear_pick_) {
+      point_buffer_->trigger_fix(pixel.point_id_);
     }
   }
 
@@ -285,7 +340,12 @@ void SceneGomu2::update()
 
 void SceneGomu2::render()
 {
-  glClear(GL_COLOR_BUFFER_BIT);
+  // pass 1
+  fbo_.bind();
+
+  // 描画と3D pickのクリア
+  glClearBufferfv(GL_COLOR, 0, &clear_color_.x);
+  glClearBufferuiv(GL_COLOR, 1, &clear_pick_);
 
   // point_buffer->calculate()の並列計算を同期待ち
   // 理屈上MemoryBarrier()はキリギリまで遅らせた方が余計なWaitが入らない筈
@@ -301,34 +361,71 @@ void SceneGomu2::render()
     ImGui::End();
   }
 
-  prog_.use();
-  prog_.set_uniform("color_move", vec4(0.f, 0.f, 0.f, 1.f));
-  prog_.set_uniform("color_fix", vec4(0.f, 0.f, 0.f, 1.f));
+  line_prog_.use();
   point_buffer_->render(GL_LINE_STRIP);
-  prog_.set_uniform("color_move", vec4(1.f, 0.f, 0.f, 1.f));
-  prog_.set_uniform("color_fix", vec4(0.f, 0.f, 1.f, 1.f));  
+  point_prog_.use();
   point_buffer_->render(GL_POINTS);
 
   check_gl_error(__FILE__, __LINE__);
+
+  fbo_.bind(false);
+
+  // pass 2
+  quad_prog_.use();
+  quad_prog_.set_uniform("Tex", 1);
+  quad_.render();
 }
 
 bool SceneGomu2::compile_and_link_shaders()
 {
-  if (!prog_.compile_shader_from_file("shader/gomu.vs", ShaderType::VERTEX)) {
-    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", prog_.log().c_str());
+  if (!point_prog_.compile_shader_from_file("shader/gomu2.vs", ShaderType::VERTEX)) {
+    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", point_prog_.log().c_str());
     return false;
   }
-  if (!prog_.compile_shader_from_file("shader/gomu.fs", ShaderType::FRAGMENT)) {
-    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", prog_.log().c_str());
+  if (!point_prog_.compile_shader_from_file("shader/gomu2.fs", ShaderType::FRAGMENT)) {
+    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", point_prog_.log().c_str());
+    return false;
+  }
+  if (!point_prog_.link()) {
+    fprintf(stderr, "Linking shader program failed.\n%s\n", point_prog_.log().c_str());
+    return false;
+  }
+  if (!point_prog_.valid()) {
+    fprintf(stderr, "Validating program failed.\n%s\n", point_prog_.log().c_str());
+    return false;
+  }
+  
+  if (!line_prog_.compile_shader_from_file("shader/gomu2_line.vs", ShaderType::VERTEX)) {
+    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", line_prog_.log().c_str());
+    return false;
+  }
+  if (!line_prog_.compile_shader_from_file("shader/gomu2_line.fs", ShaderType::FRAGMENT)) {
+    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", line_prog_.log().c_str());
+    return false;
+  }
+  if (!line_prog_.link()) {
+    fprintf(stderr, "Linking shader program failed.\n%s\n", line_prog_.log().c_str());
+    return false;
+  }
+  if (!line_prog_.valid()) {
+    fprintf(stderr, "Validating program failed.\n%s\n", line_prog_.log().c_str());
     return false;
   }
 
-  if (!prog_.link()) {
-    fprintf(stderr, "Linking shader program failed.\n%s\n", prog_.log().c_str());
+  if (!quad_prog_.compile_shader_from_file("shader/quad.vs", ShaderType::VERTEX)) {
+    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", quad_prog_.log().c_str());
     return false;
   }
-  if (!prog_.valid()) {
-    fprintf(stderr, "Validating program failed.\n%s\n", prog_.log().c_str());
+  if (!quad_prog_.compile_shader_from_file("shader/quad.fs", ShaderType::FRAGMENT)) {
+    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", quad_prog_.log().c_str());
+    return false;
+  }
+  if (!quad_prog_.link()) {
+    fprintf(stderr, "Linking shader program failed.\n%s\n", quad_prog_.log().c_str());
+    return false;
+  }
+  if (!quad_prog_.valid()) {
+    fprintf(stderr, "Validating program failed.\n%s\n", quad_prog_.log().c_str());
     return false;
   }
   
@@ -362,9 +459,9 @@ bool SceneGomu2::compile_and_link_shaders()
     return false;
   }
   
-  prog_.use();
-  prog_.print_active_attribs();
-  prog_.print_active_uniforms();
+  point_prog_.use();
+  point_prog_.print_active_attribs();
+  point_prog_.print_active_uniforms();
 
   return true;
 }

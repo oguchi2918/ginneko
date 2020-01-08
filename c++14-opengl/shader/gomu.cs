@@ -49,6 +49,7 @@ void main()
   vec2 dv2 = read_points[i].velocity.xy - read_points[i + 1].velocity.xy;
   f2 = (length(l2) - l) * k * normalize(l2) - c * dv2;
     
+  // 更新時にw要素に影響しないよう注意すること
   vec4 a = vec4((f1 + f2) / m + g, 0.f, 0.f);
   vec4 v_avg = read_points[i].velocity + (a * dt) * 0.5; // 修正オイラー法
     

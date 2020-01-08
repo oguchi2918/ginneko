@@ -6,12 +6,13 @@ CXXFLAGS = "-std=c++14 -Wall -O2 -I/usr/local/include -DIMGUI_IMPL_OPENGL_LOADER
 CFLAGS = "-Wall -Werror -O2 -I/usr/local/include -DIMGUI_IMPL_OPENGL_LOADER_GLAD " + `sdl2-config --cflags`.chomp
 LDFLAGS = `sdl2-config --libs`.chomp + " -lGL"# -lassimp"
 
-TARGET = 'blob'
+#TARGET = 'blob'
 #TARGET = 'cameratest'
-#TARGET = 'gomu'
+TARGET = 'gomu'
 #TARGET = 'gomu2'
 #TARGET = 'multilighting'
 #TARGET = 'pointanim'
+#TARGET = 'imageprocess'
 
 VBO_SRCS = FileList["shape.cpp"]
 NEKOLIB_SRCS = FileList["memory.cpp", "clock.cpp", "input.cpp", "renderer.cpp", "program.cpp", "utils.cpp", "texture.cpp", "camera.cpp"]#, "rendertarget.cpp"]

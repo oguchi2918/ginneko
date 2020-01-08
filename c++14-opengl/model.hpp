@@ -276,7 +276,7 @@ namespace nekolib {
 	    // texture with this path has not loaded
 	    Texture texture;
 	    fprintf(stderr, "loading texture from %s\n", path.c_str());
-	    texture.texture = nekolib::renderer::Texture::create(path.c_str(), false);
+	    texture.texture = nekolib::renderer::Texture::create(path.c_str(), false, false);
 	    if (!texture.texture) {
 	      fprintf(stderr, "loading texture from %s, falied\n", path.c_str());
 	      return false;

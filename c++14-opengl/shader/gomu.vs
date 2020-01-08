@@ -1,6 +1,6 @@
 #version 330 core
 
-layout (location = 0) in vec4 aPos;
+layout (location = 0) in vec4 aPos; // 節点位置(xyz) + 固定flag(w)
 
 out VS_OUT {
   float fix_flag;
