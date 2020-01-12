@@ -55,6 +55,7 @@ gomu2 … ゴム紐シミュレーション(Compute Shader版)
 multilighting … 各種光源のサンプル実装(Imguiで色調整版)
 pointanim … 粒子の渦アニメーション
 imageprocess … 各種フィルタによる画像処理(Compute Shader版)
+colormatrix … color matrixによる色補正(Compute Shader版)
 
 ■環境構築手順とか
 まず、ハードウェアとしてOpenGL4.3以降に対応したグラボが必要です。
