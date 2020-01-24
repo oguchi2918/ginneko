@@ -185,6 +185,47 @@ namespace nekolib {
       }
     }
 
+    bool Program::build_program_from_files(std::vector<std::string> filenames)
+    {
+      for (const std::string& filename : filenames) {
+	auto pos = filename.find_last_of('.');
+	if (pos == std::string::npos) {
+	  fprintf(stderr, "Illegal shader file name - %s\n", filename.c_str());
+	  return false;
+	}
+	auto ext = filename.substr(pos + 1);
+	ShaderType type;
+	if (ext == "vs" || ext == "vert") {
+	  type = ShaderType::VERTEX;
+	} else if (ext == "fs" || ext == "frag") {
+	  type = ShaderType::FRAGMENT;
+	} else if (ext == "gs" || ext == "geom") {
+	  type = ShaderType::GEOMETRY;
+	} else if (ext == "cs" || ext == "comp") {
+	  type = ShaderType::COMPUTE;
+	} else {
+	  fprintf(stderr, "Illegal shader file name - %s\n", filename.c_str());
+	  return false;
+	}
+
+	if (!compile_shader_from_file(filename.c_str(), type)) {
+	  fprintf(stderr, "Compiling shader file %s failed.\n%s\n", filename.c_str(), log().c_str());
+	  return false;
+	}
+      }
+      
+      if (!link()) {
+	fprintf(stderr, "Linking shader program failed.\n%s\n", log().c_str());
+	return false;
+      }
+      if (!valid()) {
+	fprintf(stderr, "Validating program failed.\n%s\n", log().c_str());
+	return false;
+      }
+
+      return true;
+    }
+
     void Program::bind_attrib_location(GLuint location, const char* name)
     {
       glBindAttribLocation(handle_, location, name);

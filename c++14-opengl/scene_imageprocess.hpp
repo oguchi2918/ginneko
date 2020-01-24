@@ -23,7 +23,7 @@ private:
   nekolib::renderer::Texture source_tex_;  // immutable
   nekolib::renderer::Texture result_tex_;  // immutable
 
-  bool imgui_ = false;
+  bool imgui_ = true;
 
   void filter(nekolib::renderer::Program&);
   bool compile_and_link_shaders();

@@ -35,6 +35,15 @@ namespace nekolib {
       Program() : handle_(0), linked_(false), log_string_(""), uniforms_() { uniforms_.reserve(16); }
       ~Program();
 
+      // 複数のファイルからProgramを自動生成
+      // compile_shader_from_file() -> link() -> valid()の順で実行される
+      // ShaderTypeは以下のようにファイル名の拡張子から自動判別
+      // "*.vs" or "*.vert" -> VERTEX
+      // "*.fs" or "*.frag" -> FRAGMENT
+      // "*.gs" or "*.geom" -> GEOMETRY
+      // "*.cs" or "*.comp" -> COMPUTE
+      bool build_program_from_files(std::vector<std::string> filenames);
+
       bool compile_shader_from_file(const char* filename, ShaderType type);
       bool compile_shader_from_string(const std::string& source, ShaderType type);
       bool link();

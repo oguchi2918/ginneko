@@ -40,7 +40,7 @@ bool SceneImageProcess::init(int* width, int* height)
   source_tex_.bind(1);
   result_tex_.bind(2);
 
-  fprintf(stdout, "Press 'd' key to select filter dialog.\n");
+  fprintf(stdout, "Press 'd' key to show/hide filter dialog.\n");
 
   return true;
 }

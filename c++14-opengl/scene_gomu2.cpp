@@ -378,84 +378,28 @@ void SceneGomu2::render()
 
 bool SceneGomu2::compile_and_link_shaders()
 {
-  if (!point_prog_.compile_shader_from_file("shader/gomu2.vs", ShaderType::VERTEX)) {
-    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", point_prog_.log().c_str());
-    return false;
-  }
-  if (!point_prog_.compile_shader_from_file("shader/gomu2.fs", ShaderType::FRAGMENT)) {
-    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", point_prog_.log().c_str());
-    return false;
-  }
-  if (!point_prog_.link()) {
-    fprintf(stderr, "Linking shader program failed.\n%s\n", point_prog_.log().c_str());
-    return false;
-  }
-  if (!point_prog_.valid()) {
-    fprintf(stderr, "Validating program failed.\n%s\n", point_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!line_prog_.compile_shader_from_file("shader/gomu2_line.vs", ShaderType::VERTEX)) {
-    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", line_prog_.log().c_str());
-    return false;
-  }
-  if (!line_prog_.compile_shader_from_file("shader/gomu2_line.fs", ShaderType::FRAGMENT)) {
-    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", line_prog_.log().c_str());
-    return false;
-  }
-  if (!line_prog_.link()) {
-    fprintf(stderr, "Linking shader program failed.\n%s\n", line_prog_.log().c_str());
-    return false;
-  }
-  if (!line_prog_.valid()) {
-    fprintf(stderr, "Validating program failed.\n%s\n", line_prog_.log().c_str());
+  std::vector<std::string> tmp{ "shader/gomu2.vs", "shader/gomu2.fs" };
+  if (!point_prog_.build_program_from_files(tmp)) {
     return false;
   }
 
-  if (!quad_prog_.compile_shader_from_file("shader/quad.vs", ShaderType::VERTEX)) {
-    fprintf(stderr, "Compiling vertex shader failed.\n%s\n", quad_prog_.log().c_str());
+  tmp = { "shader/gomu2_line.vs", "shader/gomu2_line.fs" };
+  if (!line_prog_.build_program_from_files(tmp)) {
     return false;
   }
-  if (!quad_prog_.compile_shader_from_file("shader/quad.fs", ShaderType::FRAGMENT)) {
-    fprintf(stderr, "Compiling fragment shader failed.\n%s\n", quad_prog_.log().c_str());
+
+  tmp = { "shader/quad.vs", "shader/quad.fs" };
+  if (!quad_prog_.build_program_from_files(tmp)) {
     return false;
   }
-  if (!quad_prog_.link()) {
-    fprintf(stderr, "Linking shader program failed.\n%s\n", quad_prog_.log().c_str());
+
+  tmp = { "shader/gomu.cs" };
+  if (!comp_prog_.build_program_from_files(tmp)) {
     return false;
   }
-  if (!quad_prog_.valid()) {
-    fprintf(stderr, "Validating program failed.\n%s\n", quad_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!comp_prog_.compile_shader_from_file("shader/gomu.cs", ShaderType::COMPUTE)) {
-    fprintf(stderr, "Compiling compute shader failed.\n%s\n", comp_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!comp_prog_.link()) {
-    fprintf(stderr, "Linking shader program failed.\n%s\n", comp_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!comp_prog_.valid()) {
-    fprintf(stderr, "Validating program failed.\n%s\n", comp_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!comp_end_prog_.compile_shader_from_file("shader/gomu_end.cs", ShaderType::COMPUTE)) {
-    fprintf(stderr, "Compiling compute shader failed.\n%s\n", comp_end_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!comp_end_prog_.link()) {
-    fprintf(stderr, "Linking shader program failed.\n%s\n", comp_end_prog_.log().c_str());
-    return false;
-  }
-  
-  if (!comp_end_prog_.valid()) {
-    fprintf(stderr, "Validating program failed.\n%s\n", comp_end_prog_.log().c_str());
+
+  tmp = { "shader/gomu_end.cs" };
+  if (!comp_end_prog_.build_program_from_files(tmp)) {
     return false;
   }
   
