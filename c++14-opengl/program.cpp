@@ -28,6 +28,9 @@ namespace nekolib {
       for (auto& kv : uniforms_) {
 	free(kv.first);
       }
+      for (auto& kv : uniform_blocks_) {
+	free(kv.first);
+      }
     }
   
     bool Program::compile_shader_from_file(const char* filename, ShaderType type)
@@ -226,15 +229,15 @@ namespace nekolib {
       return true;
     }
 
-    void Program::bind_attrib_location(GLuint location, const char* name)
-    {
-      glBindAttribLocation(handle_, location, name);
-    }
+    // void Program::bind_attrib_location(GLuint location, const char* name)
+    // {
+    //   glBindAttribLocation(handle_, location, name);
+    // }
 
-    void Program::bind_frag_data_location(GLuint location, const char* name)
-    {
-      glBindFragDataLocation(handle_, location, name);
-    }
+    // void Program::bind_frag_data_location(GLuint location, const char* name)
+    // {
+    //   glBindFragDataLocation(handle_, location, name);
+    // }
 
     void Program::set_uniform(const char* name, float x, float y, float z)
     {
@@ -320,15 +323,23 @@ namespace nekolib {
       }
     }
 
-    void Program::set_subroutines(std::vector<const char*>names, ShaderType shader)
+    void Program::set_uniform_block(const char* name, unsigned int bp)
     {
-      std::vector<GLuint> locs;
-      for (auto it(names.begin()); it != names.end(); ++it) {
-	GLuint loc = glGetSubroutineIndex(handle_, static_cast<GLenum>(shader), *it);
-	locs.push_back(loc);
+      int loc = get_uniform_block_index(name);
+      if (loc >= 0) {
+	glUniformBlockBinding(handle_, loc, bp);
       }
-      glUniformSubroutinesuiv(static_cast<GLenum>(shader), locs.size(), &locs[0]);
     }
+
+    // void Program::set_subroutines(std::vector<const char*>names, ShaderType shader)
+    // {
+    //   std::vector<GLuint> locs;
+    //   for (auto it(names.begin()); it != names.end(); ++it) {
+    // 	GLuint loc = glGetSubroutineIndex(handle_, static_cast<GLenum>(shader), *it);
+    // 	locs.push_back(loc);
+    //   }
+    //   glUniformSubroutinesuiv(static_cast<GLenum>(shader), locs.size(), &locs[0]);
+    // }
 
     void Program::print_active_uniforms()
     {
@@ -389,6 +400,27 @@ namespace nekolib {
       }
     }
 
+    int Program::get_uniform_block_index(const char* name)
+    {
+      // search uniform block name
+      auto iter = lower_bound(uniform_blocks_.begin(), uniform_blocks_.end(), name,
+			      [](const KeyValue& p, const char* s) {
+				return strcmp(p.first, s) < 0;
+			      });
+      if (iter == uniform_blocks_.end() || strcmp((*iter).first, name) != 0) { // not found
+	char* key = strdup(name);
+	int loc = glGetUniformBlockIndex(handle_, name);
+	uniform_blocks_.insert(iter, std::make_pair(key, loc));
+
+	if (loc < 0) { // uniform block doesn't exist
+	  fprintf(stderr, "uniform block %s can't found\n", name);
+	}
+	return loc;
+      } else { // found
+	return (*iter).second;
+      }
+    }
+    
     bool Program::file_exists(const char* filename)
     {
       struct stat info;

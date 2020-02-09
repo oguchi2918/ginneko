@@ -27,12 +27,16 @@ namespace nekolib {
       // 「このユニフォーム変数は存在しない」エラーを
       // 最初の一回だけ表示する為に使用している
       std::vector<std::pair<char*, int>> uniforms_;
+      std::vector<std::pair<char*, int>> uniform_blocks_;
 
       int get_uniform_location(const char* name);
+      int get_uniform_block_index(const char* name);
       bool file_exists(const char* filename);
 
     public:
-      Program() : handle_(0), linked_(false), log_string_(""), uniforms_() { uniforms_.reserve(16); }
+      Program() : handle_(0), linked_(false), log_string_(""), uniforms_() {
+	uniforms_.reserve(16);
+      }
       ~Program();
 
       // 複数のファイルからProgramを自動生成
@@ -54,9 +58,9 @@ namespace nekolib {
       int handle() const noexcept { return handle_; }
       bool is_linked() const noexcept { return linked_; }
 
-      // シェーダの方でlocation指定を使うなら以下の二関数はあまり使わない
-      void bind_attrib_location(GLuint location, const char* name);
-      void bind_frag_data_location(GLuint location, const char* name);
+      // シェーダの方でlocation指定を使うので要らない
+      // void bind_attrib_location(GLuint location, const char* name);
+      // void bind_frag_data_location(GLuint location, const char* name);
     
       void set_uniform(const char* name, float x, float y, float z);
       void set_uniform(const char* name, const glm::vec2& v);
@@ -70,7 +74,10 @@ namespace nekolib {
       void set_uniform(const char* name, bool val);
       void set_uniform(const char* name, const float* a, size_t count);
 
-      void set_subroutines(std::vector<const char*> names, ShaderType type);
+      void set_uniform_block(const char* name, unsigned int bp);
+
+      // サブルーチンはAPI仕様がカプセル化を阻害しているので使用禁止
+      // void set_subroutines(std::vector<const char*> names, ShaderType type);
 
       void print_active_uniforms();
       void print_active_attribs();

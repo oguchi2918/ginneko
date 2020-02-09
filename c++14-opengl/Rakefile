@@ -10,10 +10,12 @@ LDFLAGS = `sdl2-config --libs`.chomp + " -lGL"# -lassimp"
 #TARGET = 'cameratest'
 #TARGET = 'gomu'
 #TARGET = 'gomu2'
+#TARGET = 'gomu3'
+TARGET = 'gomu4'
 #TARGET = 'multilighting'
 #TARGET = 'pointanim'
 #TARGET = 'imageprocess'
-TARGET = 'colormatrix'
+#TARGET = 'colormatrix'
 
 VBO_SRCS = FileList["shape.cpp"]
 NEKOLIB_SRCS = FileList["memory.cpp", "clock.cpp", "input.cpp", "renderer.cpp", "program.cpp", "utils.cpp", "texture.cpp", "camera.cpp"]#, "rendertarget.cpp"]

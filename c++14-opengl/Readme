@@ -51,7 +51,9 @@ imgui/*.h
 blob … 破裂する点群のアニメーション
 cameratest … cameraクラスの操作性テスト
 gomu … ゴム紐シミュレーション(Transform Feedback版)
-gomu2 … ゴム紐シミュレーション(Compute Shader版)
+gomu2 … ゴム紐シミュレーション(Compute Shader + 改良Euler法)
+gomu3 … ゴム紐シミュレーション(Compute Shader + velocity verlet法)
+gomu4 … ゴム紐シミュレーション(Compute Shader + verlet法)
 multilighting … 各種光源のサンプル実装(Imguiで色調整版)
 pointanim … 粒子の渦アニメーション
 imageprocess … 各種フィルタによる画像処理(Compute Shader版)

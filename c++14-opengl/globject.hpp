@@ -242,6 +242,60 @@ namespace nekolib {
 	}
       };
 
+      // Uniform buffer object
+      template <typename T>
+      class UniformBuffer {
+      private:
+        GLuint handle_;
+	GLsizeiptr blocksize_;
+
+      public:
+        UniformBuffer(const T* data = nullptr, unsigned int count = 1) {
+	  static GLint alignment = -1;
+	  if (alignment == -1) {
+	    glGetIntegerv(GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT, &alignment);
+	  }
+	  blocksize_ = (((sizeof(T) - 1) / alignment) + 1) * alignment;
+	  glGenBuffers(1, &handle_);
+	  glBindBuffer(GL_UNIFORM_BUFFER, handle_);
+	  glBufferData(GL_UNIFORM_BUFFER, count * blocksize_, nullptr, GL_STATIC_DRAW);
+	  if (data) {
+	    for (size_t i = 0; i < count; ++i) {
+	      glBufferSubData(GL_UNIFORM_BUFFER, i * blocksize_, sizeof(T), data + i);
+	    }
+	  }
+	}
+	~UniformBuffer() {
+	  glDeleteBuffers(1, &handle_);
+	}
+	
+	UniformBuffer(const UniformBuffer&) = delete;
+	UniformBuffer& operator=(const UniformBuffer&) = delete;
+	UniformBuffer(UniformBuffer&& rhs) noexcept {
+	  handle_ = rhs.handle_;
+	  rhs.handle_ = 0;
+	}
+	UniformBuffer& operator=(UniformBuffer&& rhs) noexcept {
+	  handle_ = rhs.handle_;
+	  rhs.handle_ = 0;
+	  return *this;
+	}
+	
+	GLuint handle() const noexcept { return handle_; }
+	void bind() const {
+	  glBindBuffer(GL_UNIFORM_BUFFER, handle_);
+	}
+	void send(const T* data, unsigned int start = 0, unsigned int count = 1) const {
+	  glBindBuffer(GL_UNIFORM_BUFFER, handle_);
+	  for (unsigned int i = 0; i < count; ++i) {
+	    glBufferSubData(GL_UNIFORM_BUFFER, (start + i) * blocksize_, sizeof(T), data + i);
+	  }
+	}
+	void select(GLuint bp, unsigned int i = 0) const {
+	  glBindBufferRange(GL_UNIFORM_BUFFER, bp, handle_, i * blocksize_, sizeof(T));
+	}
+      };
+
     }
   }
 }

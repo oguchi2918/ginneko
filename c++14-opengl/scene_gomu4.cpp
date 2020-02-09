@@ -6,7 +6,7 @@
 
 #include "imgui/imgui.h"
 
-#include "scene_gomu2.hpp"
+#include "scene_gomu4.hpp"
 #include "defines.hpp"
 #include "input.hpp"
 #include "renderer.hpp"
@@ -20,18 +20,27 @@ using glm::mat4;
 
 using namespace nekolib::renderer;
 
+// 節点の状態(VBO用)
 struct Point {
-  vec4 position; // 節点位置(xyz) + 固定flag(w)
-  vec4 velocity;
+  alignas(16) vec4 position; // 節点位置(xyz) + 固定flag(w)
 };
 
-// 点+折れ線
+// 物理パラメーター(UBO用)
+struct PhysicParams {
+  alignas(4) uint point_num; // 節点数
+  alignas(4) float dt; // タイムステップ
+  alignas(4) float m; // 節点1個の質量
+  alignas(4) float k; // ばね定数
+  alignas(4) float c; // ばね減衰係数
+};
+
+// 点+折れ線描画
 // 固定/自由の2値情報のみCPU側でも保持
 // 1個だけ作ってunique_ptrに放り込むのでコピー&ムーブ不可の方針で.
 class PointBuffer
 {
 public:
-  PointBuffer(unsigned int n);
+  PointBuffer(const PhysicParams*, Program&, Program&);
   ~PointBuffer() = default;
 
   PointBuffer(const PointBuffer&) = delete;
@@ -40,35 +49,49 @@ public:
   PointBuffer& operator=(PointBuffer&&) = delete;
 
   void render(GLenum) const;
-  int pick(float x, float y, float dx, float dy) const;
   void move(int i, float x, float y, bool fixed) const;
-  void end_calculate();
-  void calculate(nekolib::renderer::Program&, nekolib::renderer::Program&);
+  void update();
+  void next() { current_ = (current_ + 1) % 3; }
   unsigned point_num() const noexcept { return point_num_; }
   bool is_fix(int i) const noexcept { return fix_flags_[i]; }
   void trigger_fix(int i);
   void reset();
 private:
-  gl::Vao vao_[2];
-  gl::VertexBuffer buffer_[2];
+  // verlet積分の場合pos(t)とpos(t-dt)からpos(t+dt)を計算するので
+  // 入力用2個+出力用1個の計3個のバッファを計算シェーダーで使う
+  gl::Vao vao_[3];
+  gl::VertexBuffer buffer_[3];
+  gl::UniformBuffer<PhysicParams> ubo_;
 
   std::vector<bool> fix_flags_;
 
-  size_t current_; // どちらのbuffer_を表示対象とするか(0 or 1)
-  
+  size_t current_; // 現在表示中のbuffer_ [0..2]
   const unsigned point_num_;
+  const float dt_;
+  const vec3 g_;
+
+  // 計算シェーダー
+  Program& update_prog_; // 位置更新担当
+  Program& update_end_prog_; // 両端の位置更新担当
+  
   const vec3 left_end_ = vec3(-0.9f, 0.5f, 0.f);
   const vec3 right_end_ = vec3(0.9f, 0.5f, 0.f);
+
+  void init_force();
 };
 
-PointBuffer::PointBuffer(unsigned n) : fix_flags_(n, false), current_(0), point_num_(n)
+PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
+			 Program& update_prog, Program& update_end_prog)
+  : ubo_(phsyc_param), fix_flags_(phsyc_param->point_num, false), current_(1),
+    point_num_(phsyc_param->point_num), dt_(phsyc_param->dt), g_(0.f, -9.8f / point_num_, 0.f),
+    update_prog_(update_prog), update_end_prog_(update_end_prog)
 {
   // 両端だけ青(固定)
-  fix_flags_[0] = fix_flags_[n - 1] = true;
+  fix_flags_[0] = fix_flags_[point_num_ - 1] = true;
 
-  for (size_t i = 0; i < 2; ++i) {
+  for (size_t i = 0; i < 3; ++i) {
     buffer_[i].bind();
-    glBufferData(GL_ARRAY_BUFFER, n * sizeof(Point), nullptr, GL_STATIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, point_num_ * sizeof(Point), nullptr, GL_DYNAMIC_DRAW);
 
     vao_[i].bind();
     glEnableVertexAttribArray(0);
@@ -78,14 +101,31 @@ PointBuffer::PointBuffer(unsigned n) : fix_flags_(n, false), current_(0), point_
 
   buffer_[0].bind();
   Point* pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
-  // pmapped[0..n - 1]にデータを書き込む
-  for (size_t i = 0; i < n; ++i) {
-    // 線形補間
-    float t = static_cast<float>(i) / (n - 1);
+
+  // pmapped[0..point_num_ - 1]を初期化
+  for (size_t i = 0; i < point_num_; ++i) {
+    // 位置
+    float t = static_cast<float>(i) / (point_num_ - 1);
     pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-    pmapped[i].velocity = vec4(0.f, 0.f, 0.f, 0.f);
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
+
+  buffer_[1].bind();
+  pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
+  // 初速0なので同じ位置
+  for (size_t i = 0; i < point_num_; ++i) {
+    float t = static_cast<float>(i) / (point_num_  - 1);
+    pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
+  }
+  glUnmapBuffer(GL_ARRAY_BUFFER);
+
+  // 物理パラメーターは全計算シェーダーで同じものを使用するのでUBOで設定
+  ubo_.select(0);
+  
+  update_prog_.use();
+  update_prog_.set_uniform_block("PhysicParams", 0);
+  update_end_prog_.use();
+  update_end_prog_.set_uniform_block("PhysicParams", 0);
 
   check_gl_error(__FILE__, __LINE__);
 }
@@ -94,23 +134,6 @@ void PointBuffer::render(GLenum mode) const
 {
   vao_[current_].bind();
   glDrawArrays(mode, 0, point_num_);
-}
-
-int PointBuffer::pick(float x, float y, float dx, float dy) const
-{
-  buffer_[current_].bind();
-  Point* pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY));
-  for (size_t i = 0; i < point_num_; ++i) {
-    if (fabs(pmapped[i].position.x - x) <= dx && fabs(pmapped[i].position.y - y) <= dy) {
-      glUnmapBuffer(GL_ARRAY_BUFFER);
-      return i;
-    }
-  }
-
-  glUnmapBuffer(GL_ARRAY_BUFFER);
-
-  // can't found
-  return -1;
 }
 
 // i番目の節点を座標(x, y)に移動
@@ -132,34 +155,29 @@ void PointBuffer::trigger_fix(int i)
   fix_flags_[i] = !fix_flags_[i];
   // position.wは0.f/1.f切り替え
   // velocityは0.fクリア
-  float tmp[] = {fix_flags_[i] ? 0.f : 1.f, 0.f, 0.f, 0.f, 0.f};
+  float tmp[] = {fix_flags_[i] ? 0.f : 1.f};
   buffer_[current_].bind();
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + sizeof(float) * 3, sizeof(tmp), &tmp);
 }
 
-void PointBuffer::calculate(nekolib::renderer::Program& comp_prog,
-			    nekolib::renderer::Program& comp_end_prog)
+// 更新用計算シェーダー起動
+// 両端の節点とそれ以外の節点で別の計算シェーダーを使う
+void PointBuffer::update()
 {
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[current_].handle());
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffer_[1 - current_].handle());
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[(current_ - 1) % 3].handle());
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffer_[current_].handle());
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, buffer_[(current_ + 1) % 3].handle());
   
-  comp_end_prog.use();
-
-  // 両端の節点の力の計算シェーダーを起動
+  // 両端の節点用計算シェーダーを起動
+  update_end_prog_.use();
   glDispatchCompute(1, 1, 1);
 
-  // 多分要らない
-  //glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-  
-  comp_prog.use();  
+  update_prog_.use();
 
-  // 残りの節点の力の計算シェーダーを起動
+  // 残りの節点用計算シェーダーを起動
   glDispatchCompute(point_num_ - 2, 1, 1);
 
   check_gl_error(__FILE__, __LINE__);
-
-  // バッファ交代  
-  current_ = 1 - current_;
 }
 
 // 節点を初期状態に戻す
@@ -176,19 +194,29 @@ void PointBuffer::reset()
     // 線形補間
     float t = static_cast<float>(i) / (point_num_ - 1);
     pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-    pmapped[i].velocity = vec4(0.f, 0.f, 0.f, 0.f);
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
-  current_ = 0;
+  buffer_[1].bind();
+  pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
+  // 初速0、重力のみの条件で
+  // x(t+dt) = x(t) + v(t)dt + f(t)dt^2/2m から
+  // 初期配置の次の位置を計算する
+  for (size_t i = 0; i < point_num_; ++i) {
+    float t = static_cast<float>(i) / (point_num_  - 1);
+    vec3 old = vec3(left_end_ * (1.f - t) + right_end_ * t);
+    pmapped[i].position = vec4(old + 0.5f * dt_ * dt_ * g_, fix_flags_[i] ? 0.f : 1.f);
+  }
+  glUnmapBuffer(GL_ARRAY_BUFFER);
+  current_ = 1;
 
   check_gl_error(__FILE__, __LINE__);
 }
 
 // GeForce GT 640だとpoint_num_が100000でも滑らかに動く模様
 // (重力小さくなり過ぎるけど)
-SceneGomu2::SceneGomu2() : point_num_(100), imgui_(false) {}
-SceneGomu2::~SceneGomu2(){}
+SceneGomu4::SceneGomu4() : point_num_(100), imgui_(false) {}
+SceneGomu4::~SceneGomu4(){}
 
 struct PixelInfo {
   unsigned point_id_;
@@ -196,7 +224,7 @@ struct PixelInfo {
   PixelInfo() : point_id_(0) {}
 };
 
-PixelInfo SceneGomu2::read_pixel(unsigned x, unsigned y)
+PixelInfo SceneGomu4::read_pixel(unsigned x, unsigned y)
 {
   fbo_.bind();
   glReadBuffer(GL_COLOR_ATTACHMENT1);
@@ -210,7 +238,7 @@ PixelInfo SceneGomu2::read_pixel(unsigned x, unsigned y)
   return pixel;
 }
 
-bool SceneGomu2::setup_fbo()
+bool SceneGomu4::setup_fbo()
 {
   fbo_.bind();
 
@@ -233,7 +261,7 @@ bool SceneGomu2::setup_fbo()
   return true;
 }
 
-bool SceneGomu2::init()
+bool SceneGomu4::init()
 {
   if (!compile_and_link_shaders()) {
     return false;
@@ -250,18 +278,23 @@ bool SceneGomu2::init()
     return false;
   }
 
+  // 物理パラメーター
+  const PhysicParams physic_param =
+    { point_num_,
+      1.f / 60,
+      1.f,
+      250.f,
+      25.f,
+    };
+
   // 節点+折れ線
-  point_buffer_ = std::make_unique<PointBuffer>(point_num_);
+  point_buffer_ = std::make_unique<PointBuffer>(&physic_param,
+						update_prog_, update_end_prog_);
 
   point_prog_.use();
   point_prog_.set_uniform("color_move", vec4(1.f, 0.f, 0.f, 1.f));
   point_prog_.set_uniform("color_fix", vec4(0.f, 0.f, 1.f, 1.f));
   
-  comp_end_prog_.use();
-  comp_end_prog_.set_uniform("point_num", point_num_);
-  comp_prog_.use();
-  comp_prog_.set_uniform("point_num", point_num_);
-
   glPointSize(point_size_);
   
   fprintf(stdout, "\nYou can drag a point with left mouse button.\n");
@@ -273,7 +306,7 @@ bool SceneGomu2::init()
   return true;
 }
 
-void SceneGomu2::update()
+void SceneGomu4::update()
 {
   // float dt = nekolib::clock::Clock::calc_delta_seconds(cur_, prev_);
   // prev_ = cur_.snapshot();
@@ -306,7 +339,6 @@ void SceneGomu2::update()
   float fy = static_cast<float>(cy - m.y()) * cy_inv;
 
   if (m.triggered(Mouse::Button::LEFT)) {
-    //    hit = point_buffer_->pick(fx, fy, fdx, fdy);
     PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
     //    fprintf(stderr, "%x\n", pixel.point_id_);
     hit = static_cast<int>(pixel.point_id_);
@@ -328,17 +360,17 @@ void SceneGomu2::update()
   
   if (m.triggered(Mouse::Button::RIGHT)) {
     PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
-    //    int hit_r = point_buffer_->pick(fx, fy, fdx, fdy);
     if (pixel.point_id_ != clear_pick_) {
       point_buffer_->trigger_fix(pixel.point_id_);
     }
   }
 
-  // 力の影響を計算して位置と速度を更新
-  point_buffer_->calculate(comp_prog_, comp_end_prog_);
+  // 力の影響を計算して位置を更新
+  point_buffer_->update();
+  point_buffer_->next();
 }
 
-void SceneGomu2::render()
+void SceneGomu4::render()
 {
   // pass 1
   fbo_.bind();
@@ -376,9 +408,11 @@ void SceneGomu2::render()
   quad_.render();
 }
 
-bool SceneGomu2::compile_and_link_shaders()
+bool SceneGomu4::compile_and_link_shaders()
 {
   using Names = std::vector<std::string>;
+
+  // 描画用
   if (!point_prog_.build_program_from_files(Names{ "shader/gomu2.vs", "shader/gomu2.fs" })) {
     return false;
   }
@@ -386,19 +420,20 @@ bool SceneGomu2::compile_and_link_shaders()
   if (!line_prog_.build_program_from_files(Names{ "shader/gomu2_line.vs", "shader/gomu2_line.fs" })) {
     return false;
   }
-  
+
   if (!quad_prog_.build_program_from_files(Names{ "shader/quad.vs", "shader/quad.fs" })) {
     return false;
   }
 
-  if (!comp_prog_.build_program_from_files(Names{ "shader/gomu.cs" })) {
-    return false;
-  }
-
-  if (!comp_end_prog_.build_program_from_files(Names{ "shader/gomu_end.cs" })) {
+  // 計算用
+  if (!update_prog_.build_program_from_files(Names{ "shader/gomu_ver.cs" })) {
     return false;
   }
   
+  if (!update_end_prog_.build_program_from_files(Names{ "shader/gomu_ver_end.cs" })) {
+    return false;
+  }
+
   point_prog_.use();
   point_prog_.print_active_attribs();
   point_prog_.print_active_uniforms();
