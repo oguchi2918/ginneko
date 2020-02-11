@@ -40,7 +40,6 @@ public:
   PointBuffer& operator=(PointBuffer&&) = delete;
 
   void render(GLenum) const;
-  int pick(float x, float y, float dx, float dy) const;
   void move(int i, float x, float y, bool fixed) const;
   void end_calculate();
   void calculate(nekolib::renderer::Program&, nekolib::renderer::Program&);
@@ -94,23 +93,6 @@ void PointBuffer::render(GLenum mode) const
 {
   vao_[current_].bind();
   glDrawArrays(mode, 0, point_num_);
-}
-
-int PointBuffer::pick(float x, float y, float dx, float dy) const
-{
-  buffer_[current_].bind();
-  Point* pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY));
-  for (size_t i = 0; i < point_num_; ++i) {
-    if (fabs(pmapped[i].position.x - x) <= dx && fabs(pmapped[i].position.y - y) <= dy) {
-      glUnmapBuffer(GL_ARRAY_BUFFER);
-      return i;
-    }
-  }
-
-  glUnmapBuffer(GL_ARRAY_BUFFER);
-
-  // can't found
-  return -1;
 }
 
 // i番目の節点を座標(x, y)に移動
@@ -306,7 +288,6 @@ void SceneGomu2::update()
   float fy = static_cast<float>(cy - m.y()) * cy_inv;
 
   if (m.triggered(Mouse::Button::LEFT)) {
-    //    hit = point_buffer_->pick(fx, fy, fdx, fdy);
     PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
     //    fprintf(stderr, "%x\n", pixel.point_id_);
     hit = static_cast<int>(pixel.point_id_);
@@ -328,7 +309,6 @@ void SceneGomu2::update()
   
   if (m.triggered(Mouse::Button::RIGHT)) {
     PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
-    //    int hit_r = point_buffer_->pick(fx, fy, fdx, fdy);
     if (pixel.point_id_ != clear_pick_) {
       point_buffer_->trigger_fix(pixel.point_id_);
     }

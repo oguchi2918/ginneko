@@ -67,8 +67,6 @@ private:
 
   size_t current_; // 現在表示中のbuffer_ [0..2]
   const unsigned point_num_;
-  const float dt_;
-  const vec3 g_;
 
   // 計算シェーダー
   Program& update_prog_; // 位置更新担当
@@ -82,8 +80,8 @@ private:
 
 PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
 			 Program& update_prog, Program& update_end_prog)
-  : ubo_(phsyc_param), fix_flags_(phsyc_param->point_num, false), current_(1),
-    point_num_(phsyc_param->point_num), dt_(phsyc_param->dt), g_(0.f, -9.8f / point_num_, 0.f),
+  : ubo_(phsyc_param), fix_flags_(phsyc_param->point_num, false),
+    current_(1), point_num_(phsyc_param->point_num),
     update_prog_(update_prog), update_end_prog_(update_end_prog)
 {
   // 両端だけ青(固定)
@@ -154,7 +152,6 @@ void PointBuffer::trigger_fix(int i)
 
   fix_flags_[i] = !fix_flags_[i];
   // position.wは0.f/1.f切り替え
-  // velocityは0.fクリア
   float tmp[] = {fix_flags_[i] ? 0.f : 1.f};
   buffer_[current_].bind();
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + sizeof(float) * 3, sizeof(tmp), &tmp);
@@ -199,13 +196,10 @@ void PointBuffer::reset()
 
   buffer_[1].bind();
   pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
-  // 初速0、重力のみの条件で
-  // x(t+dt) = x(t) + v(t)dt + f(t)dt^2/2m から
-  // 初期配置の次の位置を計算する
+  // 初速0なので同じ位置でOk
   for (size_t i = 0; i < point_num_; ++i) {
     float t = static_cast<float>(i) / (point_num_  - 1);
-    vec3 old = vec3(left_end_ * (1.f - t) + right_end_ * t);
-    pmapped[i].position = vec4(old + 0.5f * dt_ * dt_ * g_, fix_flags_[i] ? 0.f : 1.f);
+    pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
   current_ = 1;

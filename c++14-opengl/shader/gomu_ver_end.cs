@@ -10,19 +10,19 @@ struct Point
 // 節点群(t-dt)
 layout(std430, binding = 0) buffer ReadPoints
 {
-  readonly Point read_points[];
+  readonly Point prev_points[];
 };
 
 // 節点群(t)
 layout(std430, binding = 1) buffer ReadPoints2
 {
-  readonly Point read_points2[];
+  readonly Point current_points[];
 };
 
 // 節点群(t+dt)
 layout(std430, binding = 2) buffer WritePoints
 {
-  writeonly Point write_points[];
+  writeonly Point next_points[];
 };
 
 layout (std140) uniform PhysicParams
@@ -43,36 +43,35 @@ void main()
 
   // 左端
   // 速度
-  vec2 v = (read_points2[0].position.xy - read_points[0].position.xy) / dt;
-  vec2 v2 = (read_points2[1].position.xy - read_points[1].position.xy) / dt;
+  vec2 v = (current_points[0].position.xy - prev_points[0].position.xy) / dt;
+  vec2 v2 = (current_points[1].position.xy - prev_points[1].position.xy) / dt;
     
   // 力
-  vec2 l2 = read_points2[1].position.xy - read_points2[0].position.xy;
+  vec2 l2 = current_points[1].position.xy - current_points[0].position.xy;
   vec2 dv2 = v - v2;
   vec2 f2 = (length(l2) - l) * k * normalize(l2) - c * dv2;
 
-  vec3 force = vec3(f2 + m * g, 0.f);
+  vec3 a = vec3(f2 / m + g, 0.f);
 
   // 位置
-  write_points[0].position =
-    step(0.5, read_points2[0].position.w) *
-    vec4(2 * read_points2[0].position.xyz - read_points[0].position.xyz + dt * dt / m * force, 1.f) + step(read_points2[0].position.w, 0.5) * read_points2[0].position;
+  next_points[0].position = current_points[0].position +
+    step(0.5, current_points[0].position.w) *
+    vec4(current_points[0].position.xyz - prev_points[0].position.xyz + a * dt * dt, 0.f);
 
   // 右端
   // 速度
-  v = (read_points2[point_num - 1].position.xy - read_points[point_num - 1].position.xy) / dt;
-  vec2 v1 = (read_points2[point_num - 2].position.xy - read_points[point_num - 2].position.xy) / dt;
+  v = (current_points[point_num - 1].position.xy - prev_points[point_num - 1].position.xy) / dt;
+  vec2 v1 = (current_points[point_num - 2].position.xy - prev_points[point_num - 2].position.xy) / dt;
     
   // 力
-  vec2 l1 = read_points2[point_num - 2].position.xy - read_points2[point_num - 1].position.xy;
+  vec2 l1 = current_points[point_num - 2].position.xy - current_points[point_num - 1].position.xy;
   vec2 dv1 = v - v1;
   vec2 f1 = (length(l1) - l) * k * normalize(l1) - c * dv1;
 
-  force = vec3(f1 + m * g, 0.f);
+  a = vec3(f1 / m + g, 0.f);
 
   // 位置
-  write_points[point_num - 1].position =
-    step(0.5, read_points2[point_num - 1].position.w) *
-    vec4(2 * read_points2[point_num - 1].position.xyz - read_points[point_num - 1].position.xyz + dt * dt / m * force, 1.f) +
-    step(read_points2[point_num - 1].position.w, 0.5) * read_points2[point_num - 1].position;
+  next_points[point_num - 1].position = current_points[point_num - 1].position +
+    step(0.5, current_points[point_num - 1].position.w) *
+    vec4(current_points[point_num - 1].position.xyz - prev_points[point_num - 1].position.xyz + a * dt * dt, 0.f);
 }
