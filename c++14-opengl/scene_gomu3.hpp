@@ -20,9 +20,8 @@ private:
   nekolib::renderer::Program line_prog_; // 描画用シェーダー(線)
   nekolib::renderer::Program quad_prog_; // 画面大テクスチャ表示シェーダー
   
-  nekolib::renderer::Program update_pos_prog_; // 位置更新用計算シェーダー
-  nekolib::renderer::Program update_vel_prog_; // 速度(+力)更新用計算シェーダー
-  nekolib::renderer::Program update_vel_end_prog_; // 両端の速度(+力)更新用計算シェーダー
+  nekolib::renderer::Program update_prog_; // 更新用計算シェーダー
+  nekolib::renderer::Program update_end_prog_; // 両端の更新用計算シェーダー
   
   nekolib::clock::Clock cur_;
   nekolib::clock::Clock prev_;

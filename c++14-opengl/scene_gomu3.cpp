@@ -23,8 +23,8 @@ using namespace nekolib::renderer;
 // 節点の状態(VBO用)
 struct Point {
   alignas(16) vec4 position; // 節点位置(xyz) + 固定flag(w)
-  alignas(16) vec3 velocity;
-  alignas(16) vec3 force;
+  alignas(16) vec3 velocity; // 速度
+  alignas(16) vec3 velocity_temp; // v(t)とv(t+dt)の中間(計算途中の値)
 };
 
 // 物理パラメーター(UBO用)
@@ -42,19 +42,18 @@ struct PhysicParams {
 class PointBuffer
 {
 public:
-  PointBuffer(const PhysicParams*, Program&, Program&, Program&);
+  PointBuffer(const PhysicParams*, Program&, Program&);
   ~PointBuffer() = default;
 
   PointBuffer(const PointBuffer&) = delete;
+
   PointBuffer& operator=(const PointBuffer&) = delete;
   PointBuffer(PointBuffer&&) = delete;
   PointBuffer& operator=(PointBuffer&&) = delete;
 
   void render(GLenum) const;
-  int pick(float x, float y, float dx, float dy) const;
   void move(int i, float x, float y, bool fixed) const;
-  void update_pos();
-  void update_vel();
+  void update();
   unsigned point_num() const noexcept { return point_num_; }
   bool is_fix(int i) const noexcept { return fix_flags_[i]; }
   void trigger_fix(int i);
@@ -68,26 +67,20 @@ private:
 
   size_t current_; // どちらのbuffer_を表示対象とするか(0 or 1)
   const unsigned point_num_;
-  float mg_; // 重力
-
 
   // 計算シェーダー
-  Program& update_pos_prog_; // 位置更新担当
-  Program& update_vel_prog_; // 速度更新担当
-  Program& update_vel_end_prog_; // 速度更新担当
+  Program& update_prog_; // 両端以外の節点用
+  Program& update_end_prog_; // 両端の節点用
   
   const vec3 left_end_ = vec3(-0.9f, 0.5f, 0.f);
   const vec3 right_end_ = vec3(0.9f, 0.5f, 0.f);
-
-  void init_force();
 };
 
-PointBuffer::PointBuffer(const PhysicParams* phsyc_param, Program& update_pos_prog,
-			 Program& update_vel_prog, Program& update_vel_end_prog)
+PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
+			 Program& update_prog, Program& update_end_prog)
   : ubo_(phsyc_param), fix_flags_(phsyc_param->point_num, false),
-    current_(0), point_num_(phsyc_param->point_num), mg_(phsyc_param->m * -9.8 / point_num_),
-    update_pos_prog_(update_pos_prog),
-    update_vel_prog_(update_vel_prog), update_vel_end_prog_(update_vel_end_prog)
+    current_(0), point_num_(phsyc_param->point_num),
+    update_prog_(update_prog), update_end_prog_(update_end_prog)
 {
   // 両端だけ青(固定)
   fix_flags_[0] = fix_flags_[point_num_ - 1] = true;
@@ -112,21 +105,17 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param, Program& update_pos_pr
     pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
     // 速度は0
     pmapped[i].velocity = vec3(0.f, 0.f, 0.f);
-
-    // 力は固定されていなければ重力only
-    pmapped[i].force = vec3(0.f, fix_flags_[i] ? 0.f : mg_, 0.f);
+    pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
   // 物理パラメーターは全計算シェーダーで同じものを使用するのでUBOで設定
   ubo_.select(0);
   
-  update_pos_prog_.use();
-  update_pos_prog_.set_uniform_block("PhysicParams", 0);
-  update_vel_prog_.use();
-  update_vel_prog_.set_uniform_block("PhysicParams", 0);
-  update_vel_end_prog_.use();
-  update_vel_end_prog_.set_uniform_block("PhysicParams", 0);
+  update_prog_.use();
+  update_prog_.set_uniform_block("PhysicParams", 0);
+  update_end_prog_.use();
+  update_end_prog_.set_uniform_block("PhysicParams", 0);
 
   current_ = 0;
   check_gl_error(__FILE__, __LINE__);
@@ -136,23 +125,6 @@ void PointBuffer::render(GLenum mode) const
 {
   vao_[current_].bind();
   glDrawArrays(mode, 0, point_num_);
-}
-
-int PointBuffer::pick(float x, float y, float dx, float dy) const
-{
-  buffer_[current_].bind();
-  Point* pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY));
-  for (size_t i = 0; i < point_num_; ++i) {
-    if (fabs(pmapped[i].position.x - x) <= dx && fabs(pmapped[i].position.y - y) <= dy) {
-      glUnmapBuffer(GL_ARRAY_BUFFER);
-      return i;
-    }
-  }
-
-  glUnmapBuffer(GL_ARRAY_BUFFER);
-
-  // can't found
-  return -1;
 }
 
 // i番目の節点を座標(x, y)に移動
@@ -174,43 +146,26 @@ void PointBuffer::trigger_fix(int i)
   fix_flags_[i] = !fix_flags_[i];
   // position.wは0.f/1.f切り替え
   // velocityは0.fクリア
-  float tmp[] = {fix_flags_[i] ? 0.f : 1.f, 0.f, 0.f, 0.f, 0.f};
+  float tmp[] = {fix_flags_[i] ? 0.f : 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
   buffer_[current_].bind();
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + sizeof(float) * 3, sizeof(tmp), &tmp);
 }
 
-// 速度更新用計算シェーダー起動
-// 力の計算を含むので両端の節点とそれ以外の節点で別の計算シェーダーを使う必要有り
-void PointBuffer::update_vel()
+// 更新用計算シェーダー起動
+// 力の計算を含むので両端の節点とそれ以外の節点で別の計算シェーダーを使う
+void PointBuffer::update()
 {
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[current_].handle());
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffer_[1 - current_].handle());
   
   // 両端の節点用計算シェーダーを起動
-  update_vel_end_prog_.use();
+  update_end_prog_.use();
   glDispatchCompute(1, 1, 1);
 
-  update_vel_prog_.use();
+  update_prog_.use();
 
   // 残りの節点用計算シェーダーを起動
   glDispatchCompute(point_num_ - 2, 1, 1);
-
-  check_gl_error(__FILE__, __LINE__);
-
-  // バッファ交代  
-  current_ = 1 - current_;
-}
-
-// 位置更新用計算シェーダー起動
-// 全ての節点で同じ計算シェーダーを使う
-void PointBuffer::update_pos()
-{
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[current_].handle());
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffer_[1 - current_].handle());
-  
-  // 全ての節点用計算シェーダーを起動
-  update_pos_prog_.use();  
-  glDispatchCompute(point_num_, 1, 1);
 
   check_gl_error(__FILE__, __LINE__);
 
@@ -233,7 +188,7 @@ void PointBuffer::reset()
     float t = static_cast<float>(i) / (point_num_ - 1);
     pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
     pmapped[i].velocity = vec3(0.f, 0.f, 0.f);
-    pmapped[i].force = vec3(0.f, fix_flags_[i] ? 0.f : mg_, 0.f);
+    pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
   }
 
   glUnmapBuffer(GL_ARRAY_BUFFER);
@@ -319,8 +274,7 @@ bool SceneGomu3::init()
 
   // 節点+折れ線
   point_buffer_ = std::make_unique<PointBuffer>(&physic_param,
-						update_pos_prog_,
-						update_vel_prog_, update_vel_end_prog_);
+						update_prog_, update_end_prog_);
 
   point_prog_.use();
   point_prog_.set_uniform("color_move", vec4(1.f, 0.f, 0.f, 1.f));
@@ -370,7 +324,6 @@ void SceneGomu3::update()
   float fy = static_cast<float>(cy - m.y()) * cy_inv;
 
   if (m.triggered(Mouse::Button::LEFT)) {
-    //    hit = point_buffer_->pick(fx, fy, fdx, fdy);
     PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
     //    fprintf(stderr, "%x\n", pixel.point_id_);
     hit = static_cast<int>(pixel.point_id_);
@@ -392,16 +345,13 @@ void SceneGomu3::update()
   
   if (m.triggered(Mouse::Button::RIGHT)) {
     PixelInfo pixel = read_pixel(m.x(), nekolib::renderer::ScreenManager::height() - m.y() - 1);
-    //    int hit_r = point_buffer_->pick(fx, fy, fdx, fdy);
     if (pixel.point_id_ != clear_pick_) {
       point_buffer_->trigger_fix(pixel.point_id_);
     }
   }
 
   // 力の影響を計算して位置と速度を更新
-  point_buffer_->update_pos();
-  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-  point_buffer_->update_vel();
+  point_buffer_->update();
   glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 }
 
@@ -461,15 +411,11 @@ bool SceneGomu3::compile_and_link_shaders()
   }
 
   // 計算用
-  if (!update_pos_prog_.build_program_from_files(Names{ "shader/gomu_pos.cs" })) {
+  if (!update_prog_.build_program_from_files(Names{ "shader/gomu_vver.cs" })) {
     return false;
   }
   
-  if (!update_vel_prog_.build_program_from_files(Names{ "shader/gomu_vel.cs" })) {
-    return false;
-  }
-
-  if (!update_vel_end_prog_.build_program_from_files(Names{ "shader/gomu_vel_end.cs" })) {
+  if (!update_end_prog_.build_program_from_files(Names{ "shader/gomu_vver_end.cs" })) {
     return false;
   }
 
