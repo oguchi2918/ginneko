@@ -6,7 +6,8 @@ struct Point
 {
   vec4 position; // 位置
   vec3 velocity; // 速度
-  vec3 velocity_temp; // 速度もどき
+  vec4 position_temp; // p(t + h)
+  vec3 velocity_temp; // v(t + h)の途中
 };
 
 // 節点群(更新前)
@@ -38,29 +39,34 @@ void main()
   // 頂点データ1番から
   const uint i = gl_WorkGroupID.x + 1;
 
-  // 加速度(力)
-  vec2 l1 = current_points[i - 1].position.xy - current_points[i].position.xy;
-  vec2 dv1 = current_points[i].velocity.xy - current_points[i - 1].velocity.xy;
+  // 位置 p(t + h)
+  next_points[i].position = current_points[i].position_temp;
+  
+  // 加速度 a(t + h) (v(t + h)の値が不正確だがverlet法では仕方がない)
+  vec2 l1 = current_points[i - 1].position_temp.xy - current_points[i].position_temp.xy;
+  vec2 dv1 = current_points[i].velocity_temp.xy - current_points[i - 1].velocity_temp.xy;
   vec2 f1 = (length(l1) - l) * k * normalize(l1) - c * dv1;
 
-  vec2 l2 = current_points[i + 1].position.xy - current_points[i].position.xy;
-  vec2 dv2 = current_points[i].velocity.xy - current_points[i + 1].velocity.xy;
+  vec2 l2 = current_points[i + 1].position_temp.xy - current_points[i].position_temp.xy;
+  vec2 dv2 = current_points[i].velocity_temp.xy - current_points[i + 1].velocity_temp.xy;
   vec2 f2 = (length(l2) - l) * k * normalize(l2) - c * dv2;
 
   vec3 a = vec3((f1 + f2) / m + g, 0.f);
 
-  // 速度
-  vec3 delta_vel = 0.5 * dt * a;
-  next_points[i].velocity = step(0.5, current_points[i].position.w) *
-    (current_points[i].velocity_temp + delta_vel);
+  // 速度 v(t + h)
+  vec3 delta = 0.5 * dt * a;
+  vec3 temp = step(0.5, current_points[i].position.w) *
+    (current_points[i].velocity_temp + delta);
+  next_points[i].velocity = temp;
   
-  // 速度もどき
-  delta_vel = dt * a;
-  next_points[i].velocity_temp = step(0.5, current_points[i].position.w) *
-    (current_points[i].velocity_temp + delta_vel);
+  // 位置 p(t + 2h)
+  delta = dt * temp + 0.5 * dt * dt * a;
+  next_points[i].position_temp = current_points[i].position_temp +
+    step(0.5, current_points[i].position_temp.w) * vec4(delta, 0.f);
+  
+  // 速度 v(t + 2h)は未完成
+  delta = dt * a;
+  next_points[i].velocity_temp = step(0.5, current_points[i].position_temp.w) *
+    (current_points[i].velocity_temp + delta);
 
-  // 位置
-  vec3 delta_pos = dt * current_points[i].velocity + 0.5 * dt * dt * a;
-  next_points[i].position = current_points[i].position +
-    step(0.5, current_points[i].position.w) * vec4(delta_pos, 0.f);
 }

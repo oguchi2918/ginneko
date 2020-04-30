@@ -24,6 +24,7 @@ using namespace nekolib::renderer;
 struct Point {
   alignas(16) vec4 position; // 節点位置(xyz) + 固定flag(w)
   alignas(16) vec3 velocity; // 速度
+  alignas(16) vec4 position_temp; // p(t+dt)
   alignas(16) vec3 velocity_temp; // v(t)とv(t+dt)の中間(計算途中の値)
 };
 
@@ -102,10 +103,10 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
   for (size_t i = 0; i < point_num_; ++i) {
     // 位置
     float t = static_cast<float>(i) / (point_num_ - 1);
-    pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-    // 速度は0
-    pmapped[i].velocity = vec3(0.f, 0.f, 0.f);
-    pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
+    pmapped[i].position = pmapped[i].position_temp = 
+      vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
+    // 速度
+    pmapped[i].velocity = pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
@@ -136,6 +137,7 @@ void PointBuffer::move(int i, float x, float y, bool fixed) const
   buffer_[current_].bind();
   vec4 tmp(x, y, 0.f, fixed ? 0.f : 1.f);
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i, sizeof(tmp), &tmp.x);
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + offsetof(Point, position_temp), sizeof(tmp), &tmp.x);
 }
 
 // i番目の節点を左ドラッグ終了時に固定するかどうか切り替える
@@ -146,9 +148,10 @@ void PointBuffer::trigger_fix(int i)
   fix_flags_[i] = !fix_flags_[i];
   // position.wは0.f/1.f切り替え
   // velocityは0.fクリア
-  float tmp[] = {fix_flags_[i] ? 0.f : 1.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f, 0.f};
+  float tmp[] = {fix_flags_[i] ? 0.f : 1.f, 0.f, 0.f, 0.f };
   buffer_[current_].bind();
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + sizeof(float) * 3, sizeof(tmp), &tmp);
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + offsetof(Point, position_temp) + sizeof(float) * 3, sizeof(tmp), &tmp);
 }
 
 // 更新用計算シェーダー起動
@@ -186,9 +189,9 @@ void PointBuffer::reset()
   for (size_t i = 0; i < point_num_; ++i) {
     // 線形補間
     float t = static_cast<float>(i) / (point_num_ - 1);
-    pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-    pmapped[i].velocity = vec3(0.f, 0.f, 0.f);
-    pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
+    pmapped[i].position = pmapped[i].position_temp = 
+      vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
+    pmapped[i].velocity = pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
   }
 
   glUnmapBuffer(GL_ARRAY_BUFFER);
