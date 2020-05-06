@@ -107,6 +107,13 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
       vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
     // 速度
     pmapped[i].velocity = pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
+
+    // ↑の設定と現在のシェーダーだと実は初速は0ではなく両端を除いて-0.5*g*dtになる
+    // シェーダーに集約した計算をCPU側で行いたくないし、
+    // 初期化用シェーダーを用意するのも面倒なので手抜き
+
+    // というか実はv(t)に依存するバネの減衰を実装した結果、
+    // 保存系ではなくなりverlet法系では厳密には解けなくなっている
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 

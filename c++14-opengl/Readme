@@ -58,6 +58,8 @@ multilighting … 各種光源のサンプル実装(Imguiで色調整版)
 pointanim … 粒子の渦アニメーション
 imageprocess … 各種フィルタによる画像処理(Compute Shader版)
 colormatrix … color matrixによる色補正(Compute Shader版)
+solar … 逆一乗万有引力で相互作用する巨大太陽系？シミュレーション
+         (Compute ShaderによるRunge-Kuttaとvelocity verlet実装)
 
 ■環境構築手順とか
 まず、ハードウェアとしてOpenGL4.3以降に対応したグラボが必要です。
