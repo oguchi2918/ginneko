@@ -40,7 +40,7 @@ struct PhysicParams {
 class PointBuffer
 {
 public:
-  PointBuffer(const PhysicParams*, Program&, Program&);
+  PointBuffer(const PhysicParams*, Program&, Program&, Program&);
   ~PointBuffer() = default;
 
   PointBuffer(const PointBuffer&) = delete;
@@ -50,8 +50,8 @@ public:
 
   void render(GLenum) const;
   void move(int i, float x, float y, bool fixed) const;
+  void init();
   void update();
-  void next() { current_ = (current_ + 1) % 3; }
   unsigned point_num() const noexcept { return point_num_; }
   bool is_fix(int i) const noexcept { return fix_flags_[i]; }
   void trigger_fix(int i);
@@ -69,6 +69,7 @@ private:
   const unsigned point_num_;
 
   // 計算シェーダー
+  Program& init_prog_; // 初期状態担当
   Program& update_prog_; // 位置更新担当
   Program& update_end_prog_; // 両端の位置更新担当
   
@@ -79,10 +80,10 @@ private:
 };
 
 PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
-			 Program& update_prog, Program& update_end_prog)
+			 Program& init_prog, Program& update_prog, Program& update_end_prog)
   : ubo_(phsyc_param), fix_flags_(phsyc_param->point_num, false),
     current_(1), point_num_(phsyc_param->point_num),
-    update_prog_(update_prog), update_end_prog_(update_end_prog)
+    init_prog_(init_prog), update_prog_(update_prog), update_end_prog_(update_end_prog)
 {
   // 両端だけ青(固定)
   fix_flags_[0] = fix_flags_[point_num_ - 1] = true;
@@ -108,23 +109,18 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
-  buffer_[1].bind();
-  pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
-  // 初速0なので同じ位置
-  for (size_t i = 0; i < point_num_; ++i) {
-    float t = static_cast<float>(i) / (point_num_  - 1);
-    pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-  }
-  glUnmapBuffer(GL_ARRAY_BUFFER);
-
   // 物理パラメーターは全計算シェーダーで同じものを使用するのでUBOで設定
   ubo_.select(0);
-  
+
+  init_prog_.use();
+  init_prog_.set_uniform_block("PhysicParams", 0);
   update_prog_.use();
   update_prog_.set_uniform_block("PhysicParams", 0);
   update_end_prog_.use();
   update_end_prog_.set_uniform_block("PhysicParams", 0);
 
+  // 初期状態計算シェーダー起動
+  init();
   check_gl_error(__FILE__, __LINE__);
 }
 
@@ -143,6 +139,8 @@ void PointBuffer::move(int i, float x, float y, bool fixed) const
   buffer_[current_].bind();
   vec4 tmp(x, y, 0.f, fixed ? 0.f : 1.f);
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i, sizeof(tmp), &tmp.x);
+  buffer_[(current_ - 1) % 3].bind();
+  glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i, sizeof(tmp), &tmp.x);  
 }
 
 // i番目の節点を左ドラッグ終了時に固定するかどうか切り替える
@@ -157,11 +155,24 @@ void PointBuffer::trigger_fix(int i)
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + sizeof(float) * 3, sizeof(tmp), &tmp);
 }
 
+// 初期状態設定用計算シェーダー起動
+void PointBuffer::init()
+{
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[current_].handle());
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffer_[(current_ + 2) % 3].handle());
+
+  init_prog_.use();
+  glDispatchCompute(1, 1, 1);
+
+  glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+  check_gl_error(__FILE__, __LINE__);  
+}
+
 // 更新用計算シェーダー起動
 // 両端の節点とそれ以外の節点で別の計算シェーダーを使う
 void PointBuffer::update()
 {
-  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[(current_ - 1) % 3].handle());
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[(current_ + 2) % 3].handle());
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, buffer_[current_].handle());
   glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, buffer_[(current_ + 1) % 3].handle());
   
@@ -175,6 +186,8 @@ void PointBuffer::update()
   glDispatchCompute(point_num_ - 2, 1, 1);
 
   check_gl_error(__FILE__, __LINE__);
+  
+  current_ = (current_ + 1) % 3;
 }
 
 // 節点を初期状態に戻す
@@ -194,15 +207,9 @@ void PointBuffer::reset()
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
-  buffer_[1].bind();
-  pmapped = static_cast<Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_WRITE_ONLY));
-  // 初速0なので同じ位置でOk
-  for (size_t i = 0; i < point_num_; ++i) {
-    float t = static_cast<float>(i) / (point_num_  - 1);
-    pmapped[i].position = vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-  }
-  glUnmapBuffer(GL_ARRAY_BUFFER);
   current_ = 1;
+  // 初期状態計算シェーダー起動
+  init();
 
   check_gl_error(__FILE__, __LINE__);
 }
@@ -283,7 +290,7 @@ bool SceneGomu4::init()
 
   // 節点+折れ線
   point_buffer_ = std::make_unique<PointBuffer>(&physic_param,
-						update_prog_, update_end_prog_);
+						init_prog_, update_prog_, update_end_prog_);
 
   point_prog_.use();
   point_prog_.set_uniform("color_move", vec4(1.f, 0.f, 0.f, 1.f));
@@ -361,7 +368,6 @@ void SceneGomu4::update()
 
   // 力の影響を計算して位置を更新
   point_buffer_->update();
-  point_buffer_->next();
 }
 
 void SceneGomu4::render()
@@ -420,6 +426,10 @@ bool SceneGomu4::compile_and_link_shaders()
   }
 
   // 計算用
+  if (!init_prog_.build_program_from_files(Names{ "shader/gomu_ver_init.cs" })) {
+    return false;
+  }
+  
   if (!update_prog_.build_program_from_files(Names{ "shader/gomu_ver.cs" })) {
     return false;
   }

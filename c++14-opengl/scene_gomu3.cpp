@@ -43,7 +43,7 @@ struct PhysicParams {
 class PointBuffer
 {
 public:
-  PointBuffer(const PhysicParams*, Program&, Program&);
+  PointBuffer(const PhysicParams*, Program&, Program&, Program&);
   ~PointBuffer() = default;
 
   PointBuffer(const PointBuffer&) = delete;
@@ -54,6 +54,7 @@ public:
 
   void render(GLenum) const;
   void move(int i, float x, float y, bool fixed) const;
+  void init();
   void update();
   unsigned point_num() const noexcept { return point_num_; }
   bool is_fix(int i) const noexcept { return fix_flags_[i]; }
@@ -70,6 +71,7 @@ private:
   const unsigned point_num_;
 
   // 計算シェーダー
+  Program& init_prog_; // 初期状態用
   Program& update_prog_; // 両端以外の節点用
   Program& update_end_prog_; // 両端の節点用
   
@@ -78,10 +80,10 @@ private:
 };
 
 PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
-			 Program& update_prog, Program& update_end_prog)
+			 Program& init_prog, Program& update_prog, Program& update_end_prog)
   : ubo_(phsyc_param), fix_flags_(phsyc_param->point_num, false),
     current_(0), point_num_(phsyc_param->point_num),
-    update_prog_(update_prog), update_end_prog_(update_end_prog)
+    init_prog_(init_prog), update_prog_(update_prog), update_end_prog_(update_end_prog)
 {
   // 両端だけ青(固定)
   fix_flags_[0] = fix_flags_[point_num_ - 1] = true;
@@ -103,17 +105,10 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
   for (size_t i = 0; i < point_num_; ++i) {
     // 位置
     float t = static_cast<float>(i) / (point_num_ - 1);
-    pmapped[i].position = pmapped[i].position_temp = 
+    pmapped[i].position =
       vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
     // 速度
-    pmapped[i].velocity = pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
-
-    // ↑の設定と現在のシェーダーだと実は初速は0ではなく両端を除いて-0.5*g*dtになる
-    // シェーダーに集約した計算をCPU側で行いたくないし、
-    // 初期化用シェーダーを用意するのも面倒なので手抜き
-
-    // というか実はv(t)に依存するバネの減衰を実装した結果、
-    // 保存系ではなくなりverlet法系では厳密には解けなくなっている
+    pmapped[i].velocity = vec3(0.f, 0.f, 0.f);
   }
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
@@ -126,6 +121,9 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
   update_end_prog_.set_uniform_block("PhysicParams", 0);
 
   current_ = 0;
+
+  // position_temp, velocity_tempを設定
+  init();
   check_gl_error(__FILE__, __LINE__);
 }
 
@@ -159,6 +157,18 @@ void PointBuffer::trigger_fix(int i)
   buffer_[current_].bind();
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + sizeof(float) * 3, sizeof(tmp), &tmp);
   glBufferSubData(GL_ARRAY_BUFFER, sizeof(Point) * i + offsetof(Point, position_temp) + sizeof(float) * 3, sizeof(tmp), &tmp);
+}
+
+// 初期状態用計算シェーダー起動
+// 別にCPU側でやってもよいが物理計算はシェーダー側に閉じ籠めたい
+void PointBuffer::init()
+{
+  glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, buffer_[current_].handle());
+
+  init_prog_.use();
+  glDispatchCompute(1, 1, 1);
+
+  check_gl_error(__FILE__, __LINE__);
 }
 
 // 更新用計算シェーダー起動
@@ -196,14 +206,16 @@ void PointBuffer::reset()
   for (size_t i = 0; i < point_num_; ++i) {
     // 線形補間
     float t = static_cast<float>(i) / (point_num_ - 1);
-    pmapped[i].position = pmapped[i].position_temp = 
+    pmapped[i].position =
       vec4(left_end_ * (1.f - t) + right_end_ * t, fix_flags_[i] ? 0.f : 1.f);
-    pmapped[i].velocity = pmapped[i].velocity_temp = vec3(0.f, 0.f, 0.f);
+    pmapped[i].velocity = vec3(0.f, 0.f, 0.f);
   }
-
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
   current_ = 0;
+
+  // position_temp, velocity_tempを設定
+  init();
 
   check_gl_error(__FILE__, __LINE__);
 }
@@ -284,7 +296,7 @@ bool SceneGomu3::init()
 
   // 節点+折れ線
   point_buffer_ = std::make_unique<PointBuffer>(&physic_param,
-						update_prog_, update_end_prog_);
+						init_prog_, update_prog_, update_end_prog_);
 
   point_prog_.use();
   point_prog_.set_uniform("color_move", vec4(1.f, 0.f, 0.f, 1.f));
@@ -411,20 +423,20 @@ bool SceneGomu3::compile_and_link_shaders()
   if (!point_prog_.build_program_from_files(Names{ "shader/gomu2.vs", "shader/gomu2.fs" })) {
     return false;
   }
-
   if (!line_prog_.build_program_from_files(Names{ "shader/gomu2_line.vs", "shader/gomu2_line.fs" })) {
     return false;
   }
-
   if (!quad_prog_.build_program_from_files(Names{ "shader/quad.vs", "shader/quad.fs" })) {
     return false;
   }
 
   // 計算用
+  if (!init_prog_.build_program_from_files(Names{ "shader/gomu_vver_init.cs" })) {
+    return false;
+  }
   if (!update_prog_.build_program_from_files(Names{ "shader/gomu_vver.cs" })) {
     return false;
   }
-  
   if (!update_end_prog_.build_program_from_files(Names{ "shader/gomu_vver_end.cs" })) {
     return false;
   }

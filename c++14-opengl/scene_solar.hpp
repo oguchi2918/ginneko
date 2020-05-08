@@ -48,7 +48,7 @@ private:
 
   bool compile_and_link_shaders();
   void correct_init_data(Points&);
-  Points generate_random_init_data(size_t, unsigned, float, float);
+  Points generate_random_init_data(size_t, unsigned, double, double);
 public:
   SceneSolar();
   ~SceneSolar();

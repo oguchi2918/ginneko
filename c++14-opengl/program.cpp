@@ -292,6 +292,14 @@ namespace nekolib {
       }
     }
 
+    void Program::set_uniform(const char* name, double val)
+    {
+      int loc = get_uniform_location(name);
+      if (loc >= 0) {
+	glUniform1d(loc, val);
+      }
+    }
+      
     void Program::set_uniform(const char* name, float val)
     {
       int loc = get_uniform_location(name);

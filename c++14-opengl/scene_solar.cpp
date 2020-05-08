@@ -14,30 +14,30 @@
 #include "renderer.hpp"
 #include "utils.hpp"
 
-using glm::vec2;
-using glm::vec3;
-using glm::vec4;
+using glm::dvec2;
+using glm::dvec3;
+using glm::dvec4;
 
 using namespace nekolib::renderer;
 
 // 質点の状態(VBO用)
 struct Point {
-  alignas(4) float mass; // 質量
-  alignas(16) vec3 position; // 位置
-  alignas(16) vec3 velocity; // 速度
-  alignas(16) vec3 position_temp; // 計算途中の値
-  alignas(16) vec3 velocity_temp; // 計算途中の値
+  alignas(8) double mass; // 質量
+  alignas(32) dvec3 position; // 位置
+  alignas(32) dvec3 velocity; // 速度
+  alignas(32) dvec3 position_temp; // 計算途中の値
+  alignas(32) dvec3 velocity_temp; // 計算途中の値
 
-  Point(float m, vec2 p, vec2 v)
+  Point(double m, dvec2 p, dvec2 v)
     : mass(m), position(p, 0.0), velocity(v, 0.0), position_temp(p, 0.0), velocity_temp(v, 0.0){}
 };
 
 // 物理パラメーター(UBO用)
 struct PhysicParams {
   alignas(4) uint point_num; // 質点数
-  alignas(4) float dt; // タイムステップ
-  alignas(4) float g; // 重力加速度
-  alignas(4) float r_threshold; // 引力発生距離閾値
+  alignas(8) double dt; // タイムステップ
+  alignas(8) double g; // 重力加速度
+  alignas(8) double r_threshold; // 引力発生距離閾値
 };
 
 // 計算方法
@@ -62,15 +62,15 @@ public:
 
   void render() const;
   void update();
-  void calc_momentum_and_energy(float*, float*, float*) const;
+  void calc_momentum_and_energy(double*, double*, double*) const;
 
   void reset();
   void set_comp_method(CompMethod);
   int comp_method() { return static_cast<int>(comp_method_); }
 private:
-  vec3 calc_momentum(const Point*) const;
-  float calc_T(const Point*) const;
-  float calc_U(const Point*) const;
+  dvec3 calc_momentum(const Point*) const;
+  double calc_T(const Point*) const;
+  double calc_U(const Point*) const;
 
   void init_rk();
   void init_vver();
@@ -115,9 +115,9 @@ PointsBuffer::PointsBuffer(const Points& points, const PhysicParams* physic_para
 
     vao_[i].bind();
     glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Point), BUFFER_OFFSETOF(Point, position));
+    glVertexAttribLPointer(0, 3, GL_DOUBLE, sizeof(Point), BUFFER_OFFSETOF(Point, position));
     glEnableVertexAttribArray(1);
-    glVertexAttribPointer(1, 1, GL_FLOAT, GL_FALSE, sizeof(Point), BUFFER_OFFSETOF(Point, mass));
+    glVertexAttribLPointer(1, 1, GL_DOUBLE, sizeof(Point), BUFFER_OFFSETOF(Point, mass));
     vao_[i].bind(false);
   }
 
@@ -170,9 +170,9 @@ void PointsBuffer::init_rk()
   check_gl_error(__FILE__, __LINE__);
 }
 
-vec3 PointsBuffer::calc_momentum(const Point* p) const
+dvec3 PointsBuffer::calc_momentum(const Point* p) const
 {
-  vec3 ans(0.0);
+  dvec3 ans(0.0);
   for (size_t i = 0; i < physic_params_.point_num; ++i) {
     ans += p[i].mass * p[i].velocity;
   }
@@ -181,12 +181,12 @@ vec3 PointsBuffer::calc_momentum(const Point* p) const
 }
 
 // 位置エネルギー総和を計算
-float PointsBuffer::calc_U(const Point* p) const
+double PointsBuffer::calc_U(const Point* p) const
 {
-  float ans(0.0);
+  double ans(0.0);
   for (size_t i = 0; i < physic_params_.point_num; ++i) {
     for (size_t j = i + 1; j < physic_params_.point_num; ++j) {
-      float r = glm::length(p[j].position - p[i].position);
+      double r = glm::length(p[j].position - p[i].position);
       // 位置エネルギーは距離=閾値の時の値を最大値とする
       r = std::max(r, physic_params_.r_threshold);
       ans += physic_params_.g * p[i].mass * p[j].mass * std::log(r);
@@ -197,9 +197,9 @@ float PointsBuffer::calc_U(const Point* p) const
 }
 
 // 運動エネルギー総和を計算
-float PointsBuffer::calc_T(const Point* p) const
+double PointsBuffer::calc_T(const Point* p) const
 {
-  float ans(0.0);
+  double ans(0.0);
   for (size_t i = 0; i < physic_params_.point_num; ++i) {
     ans += 0.5 * p[i].mass * glm::dot(p[i].velocity, p[i].velocity);
   }
@@ -207,7 +207,7 @@ float PointsBuffer::calc_T(const Point* p) const
   return ans;
 }
 
-void PointsBuffer::calc_momentum_and_energy(float* mx, float* my, float* e) const
+void PointsBuffer::calc_momentum_and_energy(double* mx, double* my, double* e) const
 {
   vbo_[current_].bind();
   auto pmapped = static_cast<const Point*>(glMapBuffer(GL_ARRAY_BUFFER, GL_READ_ONLY));
@@ -256,7 +256,7 @@ void PointsBuffer::update()
   
     rk_finish_prog_.use();
     rk_finish_prog_.set_uniform_block("PhysicParams", 0);
-    rk_finish_prog_.set_uniform("x_dt2", 1.f);
+    rk_finish_prog_.set_uniform("x_dt2", 1.0);
 
     // 計算シェーダーを起動
     glDispatchCompute(physic_params_.point_num, 1, 1);
@@ -274,8 +274,8 @@ void PointsBuffer::update()
 
     rk_prog_.use();
     rk_prog_.set_uniform_block("PhysicParams", 0);
-    rk_prog_.set_uniform("x_dt1", 1.0f);
-    rk_prog_.set_uniform("x_dt2", 0.5f);
+    rk_prog_.set_uniform("x_dt1", 1.0);
+    rk_prog_.set_uniform("x_dt2", 0.5);
 
     glDispatchCompute(physic_params_.point_num, 1, 1);    
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -285,22 +285,21 @@ void PointsBuffer::update()
 
     rk_finish_prog_.use();
     rk_finish_prog_.set_uniform_block("PhysicParams", 0);
-    rk_finish_prog_.set_uniform("x_dt2", 0.5f);
+    rk_finish_prog_.set_uniform("x_dt2", 0.5);
     
     glDispatchCompute(physic_params_.point_num, 1, 1);    
 
     break;
   case CompMethod::RK: // 古典的四次Runge-Kutta法
     // 4回も力の計算をして同期待ちするので重い
-    // 宅環境だとこいつだけエネルギー計算までするとフレーム落ちする
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, vbo_[current_].handle());
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, vbo_[current_].handle());    
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, vbo_[(current_ + 1) % buffer_num_].handle());
 
     rk_prog_.use();
     rk_prog_.set_uniform_block("PhysicParams", 0);
-    rk_prog_.set_uniform("x_dt1", 0.5f);
-    rk_prog_.set_uniform("x_dt2", 1.f / 6.f);
+    rk_prog_.set_uniform("x_dt1", 0.5);
+    rk_prog_.set_uniform("x_dt2", 1.0 / 6.0);
 
     glDispatchCompute(physic_params_.point_num, 1, 1);    
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -310,8 +309,8 @@ void PointsBuffer::update()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, vbo_[(current_ + 2) % buffer_num_].handle());
 
     rk_prog_.set_uniform_block("PhysicParams", 0);
-    rk_prog_.set_uniform("x_dt1", 0.5f);
-    rk_prog_.set_uniform("x_dt2", 1.f / 3.f);
+    rk_prog_.set_uniform("x_dt1", 0.5);
+    rk_prog_.set_uniform("x_dt2", 1.0 / 3.0);
 
     glDispatchCompute(physic_params_.point_num, 1, 1);    
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -321,8 +320,8 @@ void PointsBuffer::update()
     glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, vbo_[(current_ + 1) % buffer_num_].handle());
 
     rk_prog_.set_uniform_block("PhysicParams", 0);
-    rk_prog_.set_uniform("x_dt1", 1.f);
-    rk_prog_.set_uniform("x_dt2", 1.f / 3.f);
+    rk_prog_.set_uniform("x_dt1", 1.0);
+    rk_prog_.set_uniform("x_dt2", 1.0 / 3.0);
 
     glDispatchCompute(physic_params_.point_num, 1, 1);    
     glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -332,7 +331,7 @@ void PointsBuffer::update()
 
     rk_finish_prog_.use();
     rk_finish_prog_.set_uniform_block("PhysicParams", 0);
-    rk_finish_prog_.set_uniform("x_dt2", 1.f / 6.f);
+    rk_finish_prog_.set_uniform("x_dt2", 1.0 / 6.0);
     
     glDispatchCompute(physic_params_.point_num, 1, 1);    
     break;
@@ -364,10 +363,6 @@ void PointsBuffer::reset()
     vbo_[i].bind();
     glBufferData(GL_ARRAY_BUFFER, physic_params_.point_num * sizeof(Point), &init_data_[0], GL_DYNAMIC_DRAW);
 
-    vao_[i].bind();
-    glEnableVertexAttribArray(0);
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Point), BUFFER_OFFSETOF(Point, position));
-    vao_[i].bind(false);
   }
 
   current_ = 0;
@@ -393,8 +388,8 @@ void SceneSolar::correct_init_data(Points& init_data)
   static bool called = false;
   assert(called == false);
   
-  vec3 mom_total(0.0);
-  float mass_total(0.0);
+  dvec3 mom_total(0.0);
+  double mass_total(0.0);
 
   // 系全体の運動量を計算
   for (const auto& point : init_data) {
@@ -403,7 +398,7 @@ void SceneSolar::correct_init_data(Points& init_data)
   }
 
   // 各質点の速度を補正
-  vec3 system_vel = mom_total / mass_total;
+  dvec3 system_vel = mom_total / mass_total;
   for (auto& point : init_data) {
     point.velocity -= system_vel;
     point.velocity_temp -= system_vel;
@@ -442,49 +437,49 @@ bool SceneSolar::setup_fbo()
 //
 // 最初の点データだけは固定だったり関数名と異なり色々恣意的なのは仕様
 Points SceneSolar::generate_random_init_data(size_t point_num,
-					     unsigned max_m, float max_r, float max_v)
+					     unsigned max_m, double max_r, double max_v)
 {
   // 表示の都合上これ位の範囲が実用的かなあ
   // 速すぎるとアニメーションが飛び飛びになるし
-  assert(point_num > 0 && point_num <= 1000);
+  assert(point_num > 0 && point_num <= 300);
   assert(max_m <= 5);
-  assert(max_r > 0 && max_r <= 1.f);
-  assert(max_v > 0.3 && max_v <= 3.f);
+  assert(max_r > 0 && max_r <= 1.0);
+  assert(max_v > 0.3 && max_v <= 3.0);
   
   Points ans;
 
   ans.reserve(point_num);
   
   // 最初の点データは固定値
-  ans.emplace_back(5000.0, vec2(0.0, 0.0), vec2(0.0, 0.0));
+  ans.emplace_back(5000.0, dvec2(0.0, 0.0), dvec2(0.0, 0.0));
 
   std::random_device rd;
   std::mt19937 mt(rd());
 
   std::uniform_int_distribution<int> ui(1, max_m);
-  std::uniform_real_distribution<float> ur(0.f, 0.5 * max_r * max_r);
-  std::uniform_real_distribution<float> ut(0.f, glm::two_pi<float>());
+  std::uniform_real_distribution<double> ur(0.0, 0.5 * max_r * max_r);
+  std::uniform_real_distribution<double> ut(0.0, glm::two_pi<double>());
 
   // 残りpoint_num - 1個を生成
   for (size_t i = 0; i < point_num - 1; ++i) {
     // 質量
     // 乱数が整数値なのは巨大原子とか電子雲のイメージがあっただけ
     // (特に深い意味はない)
-    float mass = static_cast<float>(ui(mt));
+    double mass = static_cast<double>(ui(mt));
     
     // 位置
     // 極座標(r, t)を使用
-    float r = std::sqrt(2 * ur(mt));
-    float t = ut(mt);
-    vec2 pos(r * std::cos(t), r * std::sin(t));
+    double r = std::sqrt(2 * ur(mt));
+    double t = ut(mt);
+    dvec2 pos(r * std::cos(t), r * std::sin(t));
 
     // 速度
     // 半径方向に初速を与えても単振動するだけでつまらないので
     // 接線方向にランダムな大きさ(最低値は0.3)の初速を与える
-    std::uniform_real_distribution<float> uv(0.3, max_v);
+    std::uniform_real_distribution<double> uv(0.3, max_v);
     r = uv(mt);
-    vec3 temp = r * glm::normalize(glm::cross(vec3(pos, 0.f), vec3(0.f, 0.f, 1.f)));
-    vec2 vel(temp.x, temp.y);
+    dvec3 temp = r * glm::normalize(glm::cross(dvec3(pos, 0.0), dvec3(0.0, 0.0, 1.0)));
+    dvec2 vel(temp.x, temp.y);
 
     ans.emplace_back(mass, pos, vel);
   }
@@ -513,30 +508,35 @@ bool SceneSolar::init()
   }
 
   // 初期位置/速度
-  // Points init_data = { Point(5000.0, vec2(0.0, 0.0), vec2(0.0, 0.0)),
-  // 		       Point(1.0, vec2(0.0, -0.2), vec2(1.3, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.24), vec2(1.2, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.28), vec2(1.1, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.32), vec2(1.0, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.36), vec2(0.9, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.4), vec2(0.8, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.44), vec2(0.7, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.48), vec2(0.7, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.52), vec2(0.7, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.56), vec2(0.7, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.6), vec2(0.7, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.64), vec2(0.7, 0.4)),
-  // 		       Point(1.0, vec2(0.0, -0.68), vec2(0.7, 0.4)) };
+  // Points init_data = { Point(5000.0, dvec2(0.0, 0.0), dvec2(0.0, 0.0)),
+  // 		       Point(1.0, dvec2(0.0, -0.2), dvec2(1.3, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.24), dvec2(1.2, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.28), dvec2(1.1, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.32), dvec2(1.0, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.36), dvec2(0.9, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.4), dvec2(0.8, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.44), dvec2(0.7, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.48), dvec2(0.7, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.52), dvec2(0.7, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.56), dvec2(0.7, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.6), dvec2(0.7, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.64), dvec2(0.7, 0.4)),
+  // 		       Point(1.0, dvec2(0.0, -0.68), dvec2(0.7, 0.4)) };
 
   // これ位の初速だと粒子が画面外に飛び出ない模様
-  // (まあ飛び出ても理論上いつか確実に戻ってくるんだけど)
+  // (まあ飛び出ても逆一乗則だと理論上いつか確実に戻ってくるんだけど)
   // 重力井戸に未来永劫囚われ続ける星々の姿をお楽しみください
-  Points init_data = generate_random_init_data(500, 5.f, 0.8f, 1.2f);
+
+  // 追記: float版だと宅環境で500個くらいまで処理落ち無しでいけるが、
+  //       誤差で計算方法の特徴が分かり難かった
+  Points init_data = generate_random_init_data(120, 5.0, 0.8, 1.2);
 
   // 速度補正
   correct_init_data(init_data);
 
   // 物理パラメーター
+  // 計算シェーダーを逆二乗則にする場合はもう少しdtを小さくした方がよい
+  // (近日点で速度が上がり過ぎてアニメーションが飛び点になる)
   const PhysicParams physic_param =
     { static_cast<uint>(init_data.size()),
       1.0 / 300,
@@ -612,7 +612,7 @@ void SceneSolar::render()
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
     quad_prog_.use();
     quad_prog_.set_uniform("Tex", 1 + (1 - current_)); // 前フレームの描画結果
-    quad_prog_.set_uniform("Factor", 0.005f);
+    quad_prog_.set_uniform("Factor", 0.002f);
     quad_.render();
   }
 
@@ -626,9 +626,9 @@ void SceneSolar::render()
 
     ImGui::Checkbox("Calc momentum & energy", &cme_);
     if (cme_) {
-      float mx, my, en;
+      double mx, my, en;
       points_buffer_->calc_momentum_and_energy(&mx, &my, &en);
-      ImGui::Text("memontum: %+f, %+f, energy: %+f", mx, my, en);
+      ImGui::Text("memontum: %+f, %+f, energy: %+f", mx * 1.0e8, my * 1.0e8, en);
     } else {
       ImGui::NewLine();
     }

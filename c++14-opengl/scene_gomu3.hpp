@@ -19,7 +19,8 @@ private:
   nekolib::renderer::Program point_prog_; // 描画用シェーダー(点)
   nekolib::renderer::Program line_prog_; // 描画用シェーダー(線)
   nekolib::renderer::Program quad_prog_; // 画面大テクスチャ表示シェーダー
-  
+
+  nekolib::renderer::Program init_prog_; // 初期状態計算シェーダー
   nekolib::renderer::Program update_prog_; // 更新用計算シェーダー
   nekolib::renderer::Program update_end_prog_; // 両端の更新用計算シェーダー
   

@@ -68,6 +68,7 @@ namespace nekolib {
       void set_uniform(const char* name, const glm::vec4& v);
       void set_uniform(const char* name, const glm::mat4& m);
       void set_uniform(const char* name, const glm::mat3& m);
+      void set_uniform(const char* name, double val);
       void set_uniform(const char* name, float val);
       void set_uniform(const char* name, int val);
       void set_uniform(const char* name, unsigned int val);
