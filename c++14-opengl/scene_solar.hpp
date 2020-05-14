@@ -20,6 +20,7 @@ private:
   // 描画シェーダー
   nekolib::renderer::Program points_prog_; // 点描画シェーダー
   nekolib::renderer::Program quad_prog_; // 画面大テクスチャ表示シェーダー
+  nekolib::renderer::Program locus_prog_; // 軌跡表示に使うシェーダー
 
   // 計算シェーダー
   // Runge Kutta法

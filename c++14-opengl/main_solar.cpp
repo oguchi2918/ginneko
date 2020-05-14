@@ -11,6 +11,7 @@
 #include "memory.hpp"
 #include "input.hpp"
 #include "clock.hpp"
+//#include "videowriter.hpp"
 #include "scene_solar.hpp"
 
 const char* TITLE = "something like solar system";
@@ -21,6 +22,7 @@ const int SCREEN_WIDTH = 800;
 const int SCREEN_HEIGHT = 800;
 
 static SceneSolar* scene = nullptr;
+//static nekolib::renderer::VideoWriter* vw = nullptr;
 
 bool update()
 {
@@ -49,6 +51,8 @@ void draw()
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
   SDL_GL_SwapWindow(window);
+  
+  //  vw->write();
 }
 
 bool init(void)
@@ -116,12 +120,15 @@ bool init(void)
   if (!scene || !scene->init()) {
     return false;
   }
+  //  vw = new nekolib::renderer::VideoWriter("./solar.avi", SCREEN_WIDTH, SCREEN_HEIGHT);
+  
   return true;
 }
 
 void finalize()
 {
   // TODO:
+  //  delete vw;
   delete scene;
   
   // imgui finalize

@@ -47,6 +47,11 @@ glad.c
 imgui/*.cpp
 imgui/*.h
 
+おまけ
+gomu3.avi … gomu3の実行結果を動画に落としたもの
+solar.avi … solarの実行結果を動画に落としたもの
+実行時には60fpsでもう少し滑らかな感じです。
+
 ■ビルドされるプログラム
 blob … 破裂する点群のアニメーション
 cameratest … cameraクラスの操作性テスト

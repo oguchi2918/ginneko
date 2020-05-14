@@ -187,7 +187,7 @@ double PointsBuffer::calc_U(const Point* p) const
   for (size_t i = 0; i < physic_params_.point_num; ++i) {
     for (size_t j = i + 1; j < physic_params_.point_num; ++j) {
       double r = glm::length(p[j].position - p[i].position);
-      // 位置エネルギーは距離=閾値の時の値を最大値とする
+      // 位置エネルギーは距離=閾値の時の値を最小値とする
       r = std::max(r, physic_params_.r_threshold);
       ans += physic_params_.g * p[i].mass * p[j].mass * std::log(r);
     }
@@ -422,7 +422,7 @@ bool SceneSolar::setup_fbo()
     glDrawBuffers(1, draw_buffers);
 
     // 画面クリア
-    glClearColor(0.1f, 0.1f, 0.1f, 1.f);
+    glClearColor(0.1f, 0.1f, 0.2f, 1.f);
     glClear(GL_COLOR_BUFFER_BIT);
   
     fbo_[i].bind(false);
@@ -607,12 +607,21 @@ void SceneSolar::render()
   glClear(GL_COLOR_BUFFER_BIT);
 
   if (locus_) {
-    // 前フレームの描画結果の透明度を上げてアルファブレンド
+    static size_t count = 0;
+    // 前フレームの描画結果をアルファブレンド
     glEnable(GL_BLEND);
     glBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
-    quad_prog_.use();
-    quad_prog_.set_uniform("Tex", 1 + (1 - current_)); // 前フレームの描画結果
-    quad_prog_.set_uniform("Factor", 0.002f);
+    // 20フレームに一度だけシェーダーでアルファ値を下げる
+    if (++count % 20 == 0) {
+      locus_prog_.use();
+      locus_prog_.set_uniform("Tex", 1 + (1 - current_)); // 前フレームの描画結果
+      locus_prog_.set_uniform("factor", 0.002f);
+      locus_prog_.set_uniform("alpha_threshold", 0.95f);
+      count = 0;
+    } else {
+      quad_prog_.use();
+      quad_prog_.set_uniform("Tex", 1 + (1 - current_)); // 前フレームの描画結果
+    }
     quad_.render();
   }
 
@@ -639,6 +648,24 @@ void SceneSolar::render()
     ImGui::RadioButton("Runge Kutta", &cm, 2); ImGui::SameLine();
     ImGui::RadioButton("Velocity Verlet", &cm, 3);
 
+    switch (cm) {
+    case 0:
+      points_buffer_->set_comp_method(CompMethod::EULER);
+      break;
+    case 1:
+      points_buffer_->set_comp_method(CompMethod::HEUN);
+      break;
+    case 2:
+      points_buffer_->set_comp_method(CompMethod::RK);
+      break;
+    case 3:
+      points_buffer_->set_comp_method(CompMethod::VVER);
+      break;
+    default:
+      assert(!"This must not be happen!");
+      break;
+    }
+    
     ImGui::Checkbox("show locus", &locus_);
     ImGui::SameLine(0, 150);
     
@@ -659,23 +686,6 @@ void SceneSolar::render()
     }
     ImGui::End();
     
-    switch (cm) {
-    case 0:
-      points_buffer_->set_comp_method(CompMethod::EULER);
-      break;
-    case 1:
-      points_buffer_->set_comp_method(CompMethod::HEUN);
-      break;
-    case 2:
-      points_buffer_->set_comp_method(CompMethod::RK);
-      break;
-    case 3:
-      points_buffer_->set_comp_method(CompMethod::VVER);
-      break;
-    default:
-      assert(!"This must not be happen!");
-      break;
-    }
   }
 
   // 点描画
@@ -685,14 +695,13 @@ void SceneSolar::render()
   check_gl_error(__FILE__, __LINE__);
 
   fbo_[current_].bind(false);
-  current_ = 1 - current_; // 裏画面交代
 
   // pass 2 (裏画面を表画面に描画)
   glDisable(GL_BLEND);
   quad_prog_.use();
-  quad_prog_.set_uniform("Tex", 1);
-  quad_prog_.set_uniform("Factor", 0.f);
+  quad_prog_.set_uniform("Tex", 1 + current_);
   quad_.render();
+  current_ = 1 - current_; // 裏画面交代
 }
 
 bool SceneSolar::compile_and_link_shaders()
@@ -703,7 +712,10 @@ bool SceneSolar::compile_and_link_shaders()
   if (!points_prog_.build_program_from_files(Names{ "shader/solar.vs", "shader/solar.fs" })) {
     return false;
   }
-  if (!quad_prog_.build_program_from_files(Names{ "shader/quad.vs", "shader/solar_quad.fs" })) {
+  if (!quad_prog_.build_program_from_files(Names{ "shader/quad.vs", "shader/quad.fs" })) {
+    return false;
+  }
+  if (!locus_prog_.build_program_from_files(Names{ "shader/quad.vs", "shader/solar_locus.fs" })) {
     return false;
   }
 
