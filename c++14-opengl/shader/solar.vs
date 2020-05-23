@@ -4,7 +4,7 @@ layout (location = 0) in dvec3 aPos;
 layout (location = 1) in double aMass;
 
 out VS_OUT {
-  float mass;
+  flat float mass; // GL_POINTSではflat必須
 } vs_out;
 
 void main()

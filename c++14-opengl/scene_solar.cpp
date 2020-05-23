@@ -637,7 +637,7 @@ void SceneSolar::render()
     if (cme_) {
       double mx, my, en;
       points_buffer_->calc_momentum_and_energy(&mx, &my, &en);
-      ImGui::Text("memontum: %+f, %+f, energy: %+f", mx * 1.0e8, my * 1.0e8, en);
+      ImGui::Text("momentum: %+f, %+f, energy: %+f", mx * 1.0e8, my * 1.0e8, en);
     } else {
       ImGui::NewLine();
     }

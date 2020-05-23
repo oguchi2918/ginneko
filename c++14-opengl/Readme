@@ -1,6 +1,8 @@
 C++で書いたOpenGL(4.3 core profile)を使用したプログラムです。
 色々と外部ライブラリを使用しているので即ビルドするのは難しいと思われます。
 一応後の方にLinux/BSDでのビルド環境構築に必要な手順の概略を書いておきますのでご容赦ください。
+まあどう見ても面倒くさいので実行結果を幾つかaviファイルに落としたものも用意してありますので、
+多少なりとも興味を引かれた方はmovie/*.aviを見てください。
 
 ■ここにあるファイル
 自作ライブラリソースファイル
@@ -31,6 +33,7 @@ renderer.hpp
 shape.hpp
 texture.hpp
 utils.hpp
+videowriter.hpp (OpenCV使用.まだ使い慣れていないのでbugあるかも)
 
 サンプルプログラムソース+ヘッダファイル
 main_***.cpp
@@ -48,9 +51,10 @@ imgui/*.cpp
 imgui/*.h
 
 おまけ
-gomu3.avi … gomu3の実行結果を動画に落としたもの
-solar.avi … solarの実行結果を動画に落としたもの
-実行時には60fpsでもう少し滑らかな感じです。
+movie/gomu3.avi … gomu3の実行結果を動画に落としたもの
+movie/solar.avi … solarの実行結果を動画に落としたもの
+movie/solar2.avi … solar2の実行結果を動画に落としたもの
+動画は微妙にカクカクしていますが、実行時には60fps出ています。
 
 ■ビルドされるプログラム
 blob … 破裂する点群のアニメーション
@@ -65,6 +69,10 @@ imageprocess … 各種フィルタによる画像処理(Compute Shader版)
 colormatrix … color matrixによる色補正(Compute Shader版)
 solar … 逆一乗万有引力によるN体問題シミュレーション
          (Compute ShaderによるRunge-Kuttaとvelocity verlet実装double精度版)
+solar2 … 逆二乗万有引力によるN体問題シミュレーション
+         (velocity verlet法にfloat精度でそこそこ高速)
+	 (起動時の引数で点の数を10個程度にすると楕円軌道がよくわかるよ!)
+
 
 ■環境構築手順とか
 まず、ハードウェアとしてOpenGL4.3以降に対応したグラボが必要です。
@@ -100,4 +108,3 @@ apt-getやportsでインストールするなりソースコードからビル�
 gladは配布HP(Web Service)にて
 language: C++ API: gl version 4.3, Profile: core, Extensions: nothingを選択して
 'generate a loader'にチェックした状態で作成された代物です。
-

@@ -1,10 +1,10 @@
 #version 410 core
 
-out vec4 FragColor;
-
 in VS_OUT {
-  float mass;
+  flat float mass; //  GL_POINTSでもflat必須
 } fs_in;
+
+out vec4 FragColor;
 
 uniform vec4 color_table[] =
   { vec4(1.f, 0.1f, 0.1f, 1.f),
@@ -17,5 +17,5 @@ uniform vec4 color_table[] =
 
 void main()
 {
-  FragColor = color_table[int(floor(fs_in.mass)) % 5000];
+  FragColor = color_table[int(fs_in.mass) % 1000];
 }

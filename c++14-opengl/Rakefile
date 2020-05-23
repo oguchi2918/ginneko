@@ -16,7 +16,8 @@ LDFLAGS = `sdl2-config --libs`.chomp + " -lGL"# -lassimp"
 #TARGET = 'pointanim'
 #TARGET = 'imageprocess'
 #TARGET = 'colormatrix'
-TARGET = 'solar'
+#TARGET = 'solar'
+TARGET = 'solar2'
 
 VBO_SRCS = FileList["shape.cpp"]
 NEKOLIB_SRCS = FileList["memory.cpp", "clock.cpp", "input.cpp", "renderer.cpp", "program.cpp", "utils.cpp", "texture.cpp", "camera.cpp"]#, "rendertarget.cpp"]
