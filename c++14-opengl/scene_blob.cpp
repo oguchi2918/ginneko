@@ -61,15 +61,17 @@ public:
 // particles : in 初期化データ
 Blob::Blob(const Particles& particles) : count_(static_cast<GLsizei>(particles.size()))
 {
-  vao_.bind();
   vbo_.bind();
   glBufferData(GL_ARRAY_BUFFER, count_ * sizeof(Particle), nullptr, GL_STATIC_DRAW);
 
   // シェーダin変数割り当て
+  vao_.bind();
+  vbo_.bind();
   glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Particle), BUFFER_OFFSETOF(Particle, position));
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(1, 4, GL_FLOAT, GL_FALSE, sizeof(Particle), BUFFER_OFFSETOF(Particle, velocity));
   glEnableVertexAttribArray(1);
+  vao_.bind(false);
 
   init(particles);
 }

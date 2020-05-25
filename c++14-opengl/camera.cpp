@@ -208,7 +208,6 @@ namespace nekolib {
       if (dx == 0 && dy == 0) {
 	return;
       }
-      //fprintf(stderr, "update: %d, %d, %f\n", dx, dy, delta_time);
       if (mode == DragMode::NONE) {
 	// nothing to do
       } else if (mode == DragMode::ROTATE) {
@@ -241,7 +240,7 @@ namespace nekolib {
     {
       glm::vec3 target = target_ + dtarget_;
       float distance = distance_ + ddistance_;
-      
+
       return glm::lookAt(target - (distance * front_), target, up_);
     }
   }

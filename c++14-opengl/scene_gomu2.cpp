@@ -70,6 +70,7 @@ PointBuffer::PointBuffer(unsigned n) : fix_flags_(n, false), current_(0), point_
     glBufferData(GL_ARRAY_BUFFER, n * sizeof(Point), nullptr, GL_STATIC_DRAW);
 
     vao_[i].bind();
+    buffer_[i].bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Point), BUFFER_OFFSET(0));
     vao_[i].bind(false);

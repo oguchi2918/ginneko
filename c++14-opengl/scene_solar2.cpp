@@ -11,6 +11,7 @@
 #include "imgui/imgui.h"
 
 #include "scene_solar2.hpp"
+#include "uniformbuffer.hpp"
 #include "defines.hpp"
 #include "input.hpp"
 #include "renderer.hpp"
@@ -76,7 +77,7 @@ private:
   static const int buffer_num_ = 2;
   gl::Vao vao_[buffer_num_];
   gl::VertexBuffer vbo_[buffer_num_];
-  gl::UniformBuffer<PhysicParams> ubo_;
+  StructUBO<PhysicParams> ubo_;
 
   size_t current_; // どのvbo_を表示対象とするか[0, bufer_num_)
 
@@ -106,8 +107,8 @@ PointsBuffer::PointsBuffer(const Points& points, const PhysicParams* physic_para
     vbo_[i].bind();
     glBufferData(GL_ARRAY_BUFFER, physic_params_.point_num * sizeof(Point), &points[0], GL_DYNAMIC_DRAW);
 
-
     vao_[i].bind();
+    vbo_[i].bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Point), BUFFER_OFFSETOF(Point, position));
     glEnableVertexAttribArray(1);

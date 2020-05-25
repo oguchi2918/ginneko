@@ -75,6 +75,7 @@ PointBuffer::PointBuffer(unsigned n) : vao_(), buffer_(), tex_buffer_(GL_RGBA32F
   glBufferData(GL_TEXTURE_BUFFER, sizeof(vec4) * n, nullptr, GL_DYNAMIC_COPY);
 
   vao_.bind();
+  buffer_.bind();
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, 0, BUFFER_OFFSET(0));
   vao_.bind(false);

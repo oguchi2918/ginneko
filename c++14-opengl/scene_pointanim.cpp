@@ -87,6 +87,7 @@ void ScenePointAnim::disseminate(size_t point_num)
   glUnmapBuffer(GL_ARRAY_BUFFER);
 
   vao_.bind();
+  buffer_.bind();
   glEnableVertexAttribArray(0);
   glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, BUFFER_OFFSET(0));
   vao_.bind(false);

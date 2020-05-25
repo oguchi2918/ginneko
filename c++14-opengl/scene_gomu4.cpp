@@ -10,6 +10,7 @@
 #include "defines.hpp"
 #include "input.hpp"
 #include "renderer.hpp"
+#include "uniformbuffer.hpp"
 #include "utils.hpp"
 
 using glm::vec2;
@@ -61,7 +62,7 @@ private:
   // 入力用2個+出力用1個の計3個のバッファを計算シェーダーで使う
   gl::Vao vao_[3];
   gl::VertexBuffer buffer_[3];
-  gl::UniformBuffer<PhysicParams> ubo_;
+  StructUBO<PhysicParams> ubo_;
 
   std::vector<bool> fix_flags_;
 
@@ -93,6 +94,7 @@ PointBuffer::PointBuffer(const PhysicParams* phsyc_param,
     glBufferData(GL_ARRAY_BUFFER, point_num_ * sizeof(Point), nullptr, GL_DYNAMIC_DRAW);
 
     vao_[i].bind();
+    buffer_[i].bind();
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 4, GL_FLOAT, GL_FALSE, sizeof(Point), BUFFER_OFFSET(0));
     vao_[i].bind(false);

@@ -48,7 +48,7 @@ namespace nekolib {
 	  {{1.f, -1.f, 0.f}, {umax, vmin}},
 	};
 
-	GLuint el[6] = {
+	GLuint el[] = {
 	  0, 1, 2, 3,
 	};
 	
